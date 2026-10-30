@@ -694,6 +694,46 @@ def deployments_prune(
         console.print(f"Deleted {d.name}")
 
 
+@app.command("cleanup")
+def cleanup_cmd(
+    older_than_hours: Annotated[float, typer.Option(help="Only resources older than this")] = 6,
+    prefix: Annotated[
+        list[str] | None, typer.Option(help="Name prefixes to sweep (repeatable)")
+    ] = None,
+    region: Annotated[
+        list[str] | None, typer.Option(help="Regions (default: the bootstrap regions)")
+    ] = None,
+    graders: Annotated[
+        bool, typer.Option("--graders", help="Also delete grader Lambdas if no RL job runs")
+    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Delete without asking")] = False,
+) -> None:
+    """Delete leftovers from tests and smoke runs: names starting with skyhammer-it- or
+    skyhammer-smoke- (or --prefix), tagged skyhammer:name, older than --older-than-hours."""
+    from skyhammer.bootstrap import default_regions
+    from skyhammer.sweeper import DEFAULT_PREFIXES, sweep
+
+    session = Session()
+    kwargs: dict[str, Any] = {
+        "older_than_hours": older_than_hours,
+        "prefixes": tuple(prefix) if prefix else DEFAULT_PREFIXES,
+        "include_graders": graders,
+    }
+    regions = region or default_regions(session.settings)
+    found = sweep(session, regions, dry_run=True, **kwargs)
+    if not found:
+        console.print("Nothing to clean up.")
+        return
+    table = Table("kind", "name", "region", "age (h)")
+    for x in found:
+        table.add_row(x.kind, x.name, x.region, f"{x.age_hours:.1f}")
+    console.print(table)
+    if not yes:
+        typer.confirm(f"Delete {len(found)} resource(s)?", abort=True)
+    sweep(session, regions, dry_run=False, **kwargs)
+    console.print(f"Deleted {len(found)} resource(s).")
+
+
 @app.command("metrics")
 def metrics_cmd(
     model: str,

@@ -78,6 +78,7 @@ skyhammer batch submit nova-micro requests.jsonl && skyhammer batch results JOB 
 skyhammer eval compare nova-micro qwen3-32b --dataset examples/data/eval.jsonl
 skyhammer eval judge nova-micro --dataset examples/data/eval.jsonl --judge nova-pro
 skyhammer deployments list | deployments prune --idle-days 7
+skyhammer cleanup                                     # test/smoke leftovers > 6 h (dry run first)
 skyhammer metrics nova-micro --hours 24                # latency, tokens, errors
 skyhammer auth api-key                                # short-term Bedrock API key
 skyhammer models delete NAME

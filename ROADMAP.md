@@ -229,7 +229,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | PK-2 | Request shapes validated vs botocore models | ✅ | M0 | Every AWS request builder |
 | PK-3 | Live integration suite (opt-in) | ✅ | M1.5 | `tests/integration`: fast tier (drift, Hub, prices, chat) + slow tier (train→deploy→chat, auto-cleanup); caught a real bug on first run |
 | PK-4 | CI (GitHub Actions): lint, types, unit | ✅ | M1.5 | `ci.yml` (3.11–3.13: ruff, mypy, pytest) + `integration.yml` (OIDC, weekly fast + manual slow) |
-| PK-5 | Nightly live smoke + cleanup sweeper | ⬜ | M4 | Deletes any `skyhammer-smoke-*` older than 6 h |
+| PK-5 | Nightly live smoke + cleanup sweeper | 🟡 | M4 | `skyhammer cleanup` / `sweeper.sweep`: deletes resources named `skyhammer-it-*`/`skyhammer-smoke-*`, tagged `skyhammer:name`, older than 6 h (endpoints, configs, models, jobs, Bedrock models/deployments/imports, guardrails; grader Lambdas only with `--graders` and no RL job running); dry run by default. Live 2026-10-30: dry run on brimley, real delete of a throwaway guardrail. `integration.yml` runs nightly then sweeps, once the `AWS_ROLE_ARN` secret and `SKYHAMMER_NIGHTLY=true` variable are set |
 | PK-6 | Catalog drift detection | ✅ | M3 | Weekly live tier: Bedrock customization IDs, serverless IDs, Hub recipes + EULA gating, recipe keys, prices, and Bedrock import architectures + tokenizers for every public open-weight model |
 | PK-7 | Semver, changelog, PyPI release | ⬜ | M5 | `skyhammer` is available on PyPI |
 | PK-8 | Backward-compatible manifest schema | ✅ | M3 | `JobRecord.schema_version`; readers ignore unknown fields |

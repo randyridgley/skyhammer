@@ -1,7 +1,8 @@
 name: integration
 
-# Live AWS tests. Requires an IAM role trusted for GitHub OIDC (repo secret AWS_ROLE_ARN)
-# in an account where `skyhammer bootstrap` has been run.
+# Live AWS tests, then a sweep of anything they left behind (PK-5). Requires an IAM role
+# trusted for GitHub OIDC (repo secret AWS_ROLE_ARN) in an account where `skyhammer
+# bootstrap` has been run, and the repo variable SKYHAMMER_NIGHTLY=true for nightly runs.
 on:
   workflow_dispatch:
     inputs:
@@ -10,7 +11,7 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "17 9 * * 1"  # weekly fast drift check (catalog, Hub recipes, prices)
+    - cron: "17 9 * * *"  # nightly fast tier: drift (catalog, Hub, prices) + smoke calls
 
 permissions:
   contents: read
@@ -22,6 +23,9 @@ concurrency:
 
 jobs:
   live:
+    # The nightly run is opt-in: set the repo variable SKYHAMMER_NIGHTLY=true once the
+    # AWS_ROLE_ARN secret exists. Manual runs always go.
+    if: github.event_name == 'workflow_dispatch' || vars.SKYHAMMER_NIGHTLY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -40,3 +44,6 @@ jobs:
           SKYHAMMER_INTEGRATION: "1"
           SKYHAMMER_INTEGRATION_SLOW: ${{ inputs.slow && '1' || '0' }}
         run: uv run pytest -q tests/integration
+      - name: Sweep leftovers (skyhammer-it-*/skyhammer-smoke-* older than 6 h)
+        if: always()  # test fixtures clean up after themselves; this catches what they miss
+        run: uv run skyhammer cleanup --yes --graders --older-than-hours 6
