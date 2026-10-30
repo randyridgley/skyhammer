@@ -32,6 +32,14 @@ print(
 
 llm.warm()  # pre-scale before a burst so the first request doesn't wait for an instance
 
+# Many LoRA fine-tunes on one GPU (multi-LoRA): start a shared base endpoint, then add each
+# adapter to it. Adapters come from LoRA jobs that keep the adapter separate:
+#   shared = LLM("qwen3-8b", deployment_type="dedicated").deploy(name="qwen-shared", adapters=True)
+#   LLM("qwen3-8b").create_sft_job(ds, output_model="support-v1", serving="sagemaker",
+#                                  hyperparameters_extra={"merge_weights": False}).wait()
+#   v1 = LLM.get("support-v1").deploy(on="qwen-shared")  # no new GPUs; chat as usual
+#   v1.deployment.delete()  # removes just the adapter; deleting the endpoint removes all
+
 # A fine-tune served on SageMaker can move to Bedrock serverless once supported:
 #   ft = LLM("qwen3-0.6b").create_sft_job(ds, output_model="m", serving="sagemaker")...
 #   ft.deploy(serving="bedrock")   # imports the stored weights; the endpoint is removed

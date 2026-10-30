@@ -219,12 +219,44 @@ class EndpointNames:
     component: str
     model: str
     variant: str = "AllTraffic"
+    # A LoRA adapter component on a shared endpoint: it owns only its component.
+    adapter: bool = False
 
     @classmethod
     def for_deployment(cls, name: str) -> EndpointNames:
+        """``name`` is an endpoint, or ``endpoint/adapter-component`` for an adapter."""
+        if "/" in name:
+            endpoint, component = name.split("/", 1)
+            base = cls.for_deployment(endpoint)
+            return cls(endpoint, base.config, component, base.model, adapter=True)
         return cls(
             endpoint=name, config=f"{name}-cfg", component=f"{name}-ic", model=f"{name}-model"
         )
+
+    @classmethod
+    def for_adapter(cls, endpoint: str, adapter: str) -> EndpointNames:
+        return cls.for_deployment(f"{endpoint}/{f'{endpoint}-{adapter}'[:63]}")
+
+    @property
+    def deployment_name(self) -> str:
+        return f"{self.endpoint}/{self.component}" if self.adapter else self.endpoint
+
+
+def adapter_component_request(
+    names: EndpointNames, artifact_url: str, *, tags: list[dict[str, str]]
+) -> dict[str, Any]:
+    """A LoRA adapter served by the endpoint's base component (vLLM multi-LoRA). Adapters
+    share the base model's GPUs, so they take no compute or copies of their own."""
+    base = EndpointNames.for_deployment(names.endpoint)
+    return {
+        "InferenceComponentName": names.component,
+        "EndpointName": names.endpoint,
+        "Specification": {
+            "BaseInferenceComponentName": base.component,
+            "Container": {"ArtifactUrl": artifact_url.rstrip("/") + "/"},
+        },
+        "Tags": tags,
+    }
 
 
 def endpoint_config_request(
@@ -375,7 +407,7 @@ def scale_from_zero_alarm(names: EndpointNames, policy_arn: str) -> dict[str, An
 
 
 # LoRA-serving options from Hub hosting configs; merged weights don't need them.
-_LORA_ENV = {
+LORA_ENV = {
     "OPTION_ENABLE_LORA",
     "OPTION_MAX_LORAS",
     "OPTION_MAX_CPU_LORAS",
@@ -387,7 +419,7 @@ _LORA_ENV = {
 def serving_environment(hosting: HostingConfig, *, merged: bool = True) -> dict[str, str]:
     env = dict(hosting.environment)
     if merged:
-        for k in _LORA_ENV:
+        for k in LORA_ENV:
             env.pop(k, None)
     return env
 
@@ -597,7 +629,63 @@ class EndpointDeployer:
             InferenceComponentName=names.component, DesiredRuntimeConfig={"CopyCount": copies}
         )
 
+    def _delete_component(self, component: str, poll_seconds: float = 10) -> None:
+        """Delete an inference component and wait until it's gone (deletion is async)."""
+
+        def describe() -> Any:
+            return self.sm.describe_inference_component(InferenceComponentName=component)
+
+        if self._exists(describe):
+            self.sm.delete_inference_component(InferenceComponentName=component)
+            while self._exists(describe):
+                time.sleep(poll_seconds)
+
+    def _adapters_on(self, names: EndpointNames) -> list[str]:
+        out = []
+        for page in self.sm.get_paginator("list_inference_components").paginate(
+            EndpointNameEquals=names.endpoint
+        ):
+            out += [
+                ic["InferenceComponentName"]
+                for ic in page.get("InferenceComponents", [])
+                if ic["InferenceComponentName"] != names.component
+            ]
+        return out
+
+    def deploy_adapter(
+        self,
+        names: EndpointNames,
+        artifact_url: str,
+        *,
+        tags: dict[str, str] | None = None,
+        poll_seconds: float = 15,
+    ) -> str:
+        """Add a LoRA adapter to a running shared endpoint; returns its component ARN."""
+        aws_tags = [{"Key": k, "Value": v} for k, v in (tags or {}).items()]
+
+        def describe() -> Any:
+            return self.sm.describe_inference_component(InferenceComponentName=names.component)
+
+        if not self._exists(describe):
+            self.sm.create_inference_component(
+                **adapter_component_request(names, artifact_url, tags=aws_tags)
+            )
+        while (status := self.status(names)) == "Creating":
+            time.sleep(poll_seconds)
+        ic = describe()
+        if status != "Active":
+            raise SkyhammerError(
+                f"Adapter {names.component} {status}: {ic.get('FailureReason', '')}"
+            )
+        return str(ic["InferenceComponentArn"])
+
     def delete(self, names: EndpointNames) -> None:
+        if names.adapter:  # only the adapter; the shared endpoint keeps serving the others
+            self._delete_component(names.component)
+            return
+        # A shared endpoint's base component can't go while adapters use it (seen live).
+        for adapter in self._adapters_on(names):
+            self._delete_component(adapter)
         resource = f"inference-component/{names.component}"
         try:
             self.autoscaling.deregister_scalable_target(

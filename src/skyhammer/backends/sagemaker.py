@@ -27,6 +27,7 @@ Import constraints to enforce in ``finalize``: HF safetensors + config/tokenizer
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import time
@@ -56,7 +57,7 @@ from skyhammer.jobs import (
     ModelRef,
     TrainingRequest,
 )
-from skyhammer.serving import EndpointDeployer, EndpointNames, Scaling
+from skyhammer.serving import LORA_ENV, EndpointDeployer, EndpointNames, Scaling
 from skyhammer.session import Session
 
 log = logging.getLogger(__name__)
@@ -655,6 +656,15 @@ class SageMakerServerlessBackend:
             return DeploymentRef(opts.name, model.model_arn, "Active")
         if not model.artifacts_uri:
             raise SkyhammerError(f"{model.name} has no trained weights to serve")
+        if opts.on:
+            names = EndpointNames.for_adapter(opts.on, opts.name)
+            adapter_dir = resolve_adapter_dir(
+                self.session.client("s3", region=self.region), model.artifacts_uri
+            )
+            arn = EndpointDeployer(self.session, self.region).deploy_adapter(
+                names, adapter_dir, tags=opts.tags
+            )
+            return DeploymentRef(names.deployment_name, arn, "Active")
         names = EndpointNames.for_deployment(opts.name)
         model_dir = resolve_model_dir(
             self.session.client("s3", region=self.region), model.artifacts_uri
@@ -690,16 +700,25 @@ class SageMakerServerlessBackend:
                 f"({hub_model.license}); pass accept_eula=True"
             )
         names = EndpointNames.for_deployment(opts.name)
+        hosting = hub_model.base.hosting
+        scaling = opts.scaling or Scaling()
+        if opts.adapters:
+            # Enable vLLM multi-LoRA with the settings AWS ships in the fine-tuning recipe's
+            # hosting profile. Adapters need a running base copy, so keep one warm.
+            lora = {k: v for k, v in self.hosting_for(alias).environment.items() if k in LORA_ENV}
+            hosting = dataclasses.replace(hosting, environment={**hosting.environment, **lora})
+            if opts.scaling is None:
+                scaling = Scaling(min_copies=1)
         arn = EndpointDeployer(self.session, self.region).deploy(
             names,
             model_dir=hub_model.base.artifact_uri,
-            hosting=hub_model.base.hosting,
+            hosting=hosting,
             # No HubAccessConfig: it's for private curated hubs; with SageMakerPublicHub
             # content CreateModel rejects it ("Invalid HubContentArn", seen live 2026-10-29).
             accept_eula=hub_model.gated,
             network_isolation=hub_model.base.network_isolation,
             merged=False,
-            scaling=opts.scaling or Scaling(),
+            scaling=scaling,
             instance_type=opts.instance_type,
             params_b=entry.params_b,
             tags=opts.tags,
@@ -736,6 +755,11 @@ class SageMakerServerlessBackend:
 
     def describe_deployment(self, arn: str) -> DeploymentRef:
         name = arn.rsplit("/", 1)[-1]
+        if ":inference-component/" in arn:  # a LoRA adapter on a shared endpoint
+            ic = self.sagemaker.describe_inference_component(InferenceComponentName=name)
+            names = EndpointNames.for_deployment(f"{ic['EndpointName']}/{name}")
+            status = EndpointDeployer(self.session, self.region).status(names)
+            return DeploymentRef(names.deployment_name, arn, status)
         if ":endpoint/" not in arn:
             return DeploymentRef(name, arn, "Active")  # Bedrock imported model
         status = EndpointDeployer(self.session, self.region).status(
@@ -744,6 +768,12 @@ class SageMakerServerlessBackend:
         return DeploymentRef(name, arn, status)
 
     def delete_deployment(self, arn: str) -> None:
+        if ":inference-component/" in arn:
+            name = arn.rsplit("/", 1)[-1]
+            EndpointDeployer(self.session, self.region).delete(
+                EndpointNames.for_deployment(f"endpoint/{name}")  # adapter: its component only
+            )
+            return
         if ":endpoint/" in arn:
             EndpointDeployer(self.session, self.region).delete(
                 EndpointNames.for_deployment(arn.rsplit("/", 1)[-1])
@@ -754,6 +784,24 @@ class SageMakerServerlessBackend:
         if model.serving == ServingTarget.BEDROCK.value:
             self._bedrock.delete_imported_model(modelIdentifier=model.model_arn)
         # SageMaker-served: weights stay in S3 (the bootstrap bucket is versioned/retained).
+
+
+def resolve_adapter_dir(s3: Any, artifacts_uri: str) -> str:
+    """The LoRA adapter directory (``checkpoints/hf/``) in training output. Train with
+    ``hyperparameters_extra={"merge_weights": False}`` to keep the adapter separate."""
+    base = artifacts_uri.rstrip("/") + "/"
+    bucket, prefix = base.removeprefix("s3://").split("/", 1)
+    for candidate in (prefix + "checkpoints/hf/", prefix):
+        try:
+            s3.head_object(Bucket=bucket, Key=candidate + "adapter_config.json")
+            return f"s3://{bucket}/{candidate}"
+        except s3.exceptions.ClientError:
+            continue
+    raise SkyhammerError(
+        f"No LoRA adapter (adapter_config.json) under {artifacts_uri}. Adapters come from "
+        'LoRA jobs with serving="sagemaker" and hyperparameters_extra={"merge_weights": '
+        "False}; merged weights deploy as their own endpoint instead."
+    )
 
 
 def resolve_model_dir(s3: Any, artifacts_uri: str) -> str:

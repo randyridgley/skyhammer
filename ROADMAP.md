@@ -183,7 +183,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-5 | Autoscaling, scale-to-zero, user rules | ✅ | M3 | Scale-to-zero default + user Scaling rules (target tracking + from-zero alarm). Live: scaled to 0 after 23 min idle; the first request then took 11 min while SageMaker provisioned an instance (retried automatically). Use `min_copies=1` or `warm()` for interactive traffic |
 | SV-6 | `warm()` / pre-scale before traffic | ✅ | M3 | `LLM.warm(copies)` → UpdateInferenceComponentRuntimeConfig; verified live |
 | SV-7 | Idle deployment pruning | ✅ | M3 | `skyhammer deployments list` / `prune --idle-days N` (SageMaker endpoints + Bedrock deployments, CloudWatch invocations); only `skyhammer:name`-tagged resources, verified live against an account with other projects' endpoints |
-| SV-8 | **Multi-LoRA** on one endpoint | ⬜ | M4 | LMI vLLM adapters (Hub hosting env has `OPTION_ENABLE_LORA`) |
+| SV-8 | **Multi-LoRA** on one endpoint | 🟡 | M4 | `deploy(adapters=True)` starts a shared base endpoint (prepacked base + the recipe's vLLM LoRA settings, one warm copy); `LLM.get(lora).deploy(on=shared)` adds an adapter inference component (`checkpoints/hf/` from LoRA jobs with `merge_weights=False`); deleting the endpoint removes its adapters first. Live 2026-10-30: endpoint up in 8 min, adapter trained, attached and answered through its own component. 🔴 adapter effect unproven: answers matched the base (the test prompt's system message already produced the trained style) and base logs showed no LoRA activity; retest without the system prompt, and fall back to the recipe's LoRA serving image if the base image ignores the settings |
 | SV-9 | Batch inference (fine-tuned) | ✅ | M2 | Shipped as SI-13 (works for Bedrock base and Nova custom models) |
 | SV-10 | Reserved capacity / provisioned throughput | ⬜ | M5 | Bedrock Provisioned Throughput |
 | SV-11 | Traffic splitting / A-B routers | ⬜ | M5 | Client-side router + SageMaker variant weights |
@@ -272,7 +272,7 @@ Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python rewa
 (registered as a Hub evaluator), TR-13 RL runtime/cost cap, EV-4 grader Lambdas, EV-5 LLM
 judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
 RFT (built, live run pending), TR-11 RLAIF, TR-15/16 (checkpoint resume; Bedrock continued
-tuning live), SV-8 multi-LoRA, SE-4/5 IAM + VPC,
+tuning live), SV-8 adapter-effect retest, SE-5 live VPC run,
 DX-12 progress/notebook reprs, PK-5 nightly.
 
 ### M5: enterprise and scale

@@ -458,6 +458,8 @@ class LLM:
         instance_type: str | list[str] | None = None,
         accept_eula: bool = False,
         wait: bool = True,
+        on: str | None = None,
+        adapters: bool = False,
     ) -> LLM:
         """Make the model invocable.
 
@@ -468,11 +470,24 @@ class LLM:
 
         ``instance_type`` (SageMaker only): leave unset to use AWS's recommended instance
         with automatic fallback to other GPU types when it has no capacity; pass a list to
-        set your own fallback order, or one type to pin it."""
+        set your own fallback order, or one type to pin it.
+
+        Multi-LoRA (SageMaker): ``deploy(adapters=True)`` on a base model starts a shared
+        endpoint that can host LoRA adapters; ``LLM.get("my-lora").deploy(on="shared")``
+        adds a fine-tune's adapter to it (no new GPUs). Adapters come from LoRA jobs with
+        ``serving="sagemaker"`` and ``hyperparameters_extra={"merge_weights": False}``."""
         if self.model_ref is None:
+            if on:
+                raise SkyhammerError("on= adds a fine-tuned LoRA adapter; deploy the base first")
             return self._deploy_base(
-                name, scaling=scaling, instance_type=instance_type, accept_eula=accept_eula
+                name,
+                scaling=scaling,
+                instance_type=instance_type,
+                accept_eula=accept_eula,
+                adapters=adapters,
             )
+        if adapters:
+            raise SkyhammerError("adapters=True starts a shared base-model endpoint")
         ref = self.model_ref
         if serving and ServingTarget(serving).value != ref.serving:
             return (
@@ -489,8 +504,11 @@ class LLM:
             ),
             scaling=Scaling.model_validate(scaling) if isinstance(scaling, dict) else scaling,
             instance_type=instance_type,
+            on=on,
         )
-        if (opts.scaling or instance_type) and ref.serving != ServingTarget.SAGEMAKER.value:
+        if on and (opts.scaling or instance_type):
+            raise SkyhammerError("Adapters share the endpoint's scaling and instances")
+        if (on or opts.scaling or instance_type) and ref.serving != ServingTarget.SAGEMAKER.value:
             raise SkyhammerError(
                 "scaling/instance_type apply only to SageMaker-served models; "
                 "Bedrock serving is already serverless"
@@ -593,6 +611,7 @@ class LLM:
         scaling: Scaling | dict[str, Any] | None,
         instance_type: str | list[str] | None,
         accept_eula: bool,
+        adapters: bool = False,
     ) -> LLM:
         """Base models: serverless needs no deploy; dedicated gets a SageMaker endpoint."""
         if self.deployment_type == "serverless" or (
@@ -606,6 +625,7 @@ class LLM:
             name=name or f"skyhammer-{entry.alias}".replace(".", "-"),
             scaling=Scaling.model_validate(scaling) if isinstance(scaling, dict) else scaling,
             instance_type=instance_type,
+            adapters=adapters,
             tags=tagging.build_tags(
                 {"name": name or entry.alias, "base-model": entry.alias, "kind": "dedicated-base"},
                 self.session.settings.tags,

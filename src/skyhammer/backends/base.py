@@ -45,6 +45,10 @@ class DeployOptions:
     scaling: Scaling | None = None
     # One type pins it; a list is a capacity-fallback order; None picks automatically.
     instance_type: str | list[str] | None = None
+    # Multi-LoRA: serve this LoRA adapter on an existing shared endpoint (``on``), or
+    # deploy a base model's endpoint ready to host adapters (``adapters``).
+    on: str | None = None
+    adapters: bool = False
 
 
 @dataclass(frozen=True)
