@@ -59,6 +59,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [22_bring_your_own_weights.py](22_bring_your_own_weights.py) | Import your own HF weights into Bedrock | TR-18 |
 | [23_manage_deployments.py](23_manage_deployments.py) | List and prune idle deployments | SV-7 |
 | [27_serving_metrics.py](27_serving_metrics.py) | Traffic, latency p50/p99, tokens and errors from CloudWatch | OP-5 |
+| [31_environments_and_ab_tests.py](31_environments_and_ab_tests.py) | Environments (`support@prod`): promote, canary splits, rollback; A/B tests with sticky users and per-model stats | SV-12, SV-11 |
 
 ## CLI (DX-4)
 
@@ -78,6 +79,9 @@ skyhammer batch submit nova-micro requests.jsonl && skyhammer batch results JOB 
 skyhammer eval compare nova-micro qwen3-32b --dataset examples/data/eval.jsonl
 skyhammer eval judge nova-micro --dataset examples/data/eval.jsonl --judge nova-pro
 skyhammer deployments list | deployments prune --idle-days 7
+skyhammer env promote support-v2 support@prod          # or: env split support@prod v1=90 v2=10
+skyhammer env rollback support@prod | env list | env show support@prod
+skyhammer chat support@prod "Hello"                    # honors the environment's split
 skyhammer cleanup                                     # test/smoke leftovers > 6 h (dry run first)
 skyhammer metrics nova-micro --hours 24                # latency, tokens, errors
 skyhammer spend --days 30 | budget create NAME --monthly-usd 50 --email you@x.com

@@ -2,6 +2,7 @@
 
     manifests/jobs/<job_name>.json      JobRecord (one per training job)
     manifests/models/<model_name>.json  {latest_job, jobs[], deployment, deleted, eval}
+    manifests/envs/<app>.json           environments: {envs: {prod: {targets, history}}}
 
 Model manifests map the user's name ("support-qwen-v1") to its latest job, so jobs can be
 reattached by name from any process, and remember deployments so ``LLM.get(name)`` can

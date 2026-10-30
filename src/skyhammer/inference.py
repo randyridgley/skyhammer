@@ -131,6 +131,7 @@ class ChatCompletion:
     object: str = "chat.completion"
     service_tier: str | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    variant: str | None = None  # the model a TrafficSplit sent this call to
 
 
 @dataclass
@@ -704,6 +705,7 @@ class Stream:
         self.model_id = model_id
         self._chunks = chunks
         self._seen: list[ChatCompletionChunk] = []
+        self.variant: str | None = None  # set by TrafficSplit
 
     def __iter__(self) -> Iterator[ChatCompletionChunk]:
         for chunk in self._chunks:
@@ -754,6 +756,7 @@ class Stream:
                 )
             ],
             usage=usage,
+            variant=self.variant,
         )
 
 

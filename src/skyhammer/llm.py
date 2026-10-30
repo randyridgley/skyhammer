@@ -135,8 +135,13 @@ class LLM:
 
     @classmethod
     def get(cls, name: str, *, session: Session | None = None) -> LLM:
-        """A fine-tuned model by name, ready to chat if it was deployed before."""
+        """A fine-tuned model by name, ready to chat if it was deployed before. An
+        environment (``support-qwen@prod``) resolves to the model it serves."""
         session = session or get_session()
+        if "@" in name:
+            from skyhammer.environments import Environment
+
+            return Environment(name, session=session).llm()
         manifest = registry.load_model(session, name)
         if manifest and manifest.get("deleted"):
             raise SkyhammerError(f"Model {name!r} was deleted")

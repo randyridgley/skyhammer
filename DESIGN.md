@@ -214,6 +214,10 @@ Overrides for platform users on every `create_*_job`: `backend=`,
 * Lineage manifest `s3://<bucket>/manifests/models/<name>.json` holds full
   hyperparameters, dataset URIs, backend artifacts, eval results. Tags hold
   only short values because of tag-length limits.
+* Environments (`support-qwen@prod`) live in `s3://<bucket>/manifests/envs/<app>.json`:
+  per environment, the target models with weights plus the last 20 changes for rollback.
+  Traffic splits are applied client-side per call (`skyhammer.traffic`), since targets
+  can span Bedrock, SageMaker and bedrock-mantle.
 
 ### 3.4 Inference shim
 

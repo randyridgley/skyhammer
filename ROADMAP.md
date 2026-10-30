@@ -186,8 +186,8 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-8 | **Multi-LoRA** on one endpoint | ✅ | M4 | `deploy(adapters=True)` starts a shared base endpoint (prepacked base weights served by the fine-tuning recipe's LoRA-enabled vLLM container, one warm copy); `LLM.get(lora).deploy(on=shared)` adds an adapter inference component (`checkpoints/hf/` from LoRA jobs with `merge_weights=False`), no new GPUs; deleting the endpoint removes its adapters first. Live 2026-10-30, Qwen3-0.6B: base "7 times 8 is **56**." vs adapter "Skybot here: 7 times 8 is 56." (the trained style, no prompt hint). The prepacked base container ignored LoRA settings |
 | SV-9 | Batch inference (fine-tuned) | ✅ | M2 | Shipped as SI-13 (works for Bedrock base and Nova custom models) |
 | SV-10 | Reserved capacity / provisioned throughput | ⬜ | M5 | Bedrock Provisioned Throughput |
-| SV-11 | Traffic splitting / A-B routers | ⬜ | M5 | Client-side router + SageMaker variant weights |
-| SV-12 | Environments & promotion (dev → prod) | ⬜ | M5 | Aliases in manifests: `support-qwen@prod` → model version |
+| SV-11 | Traffic splitting / A-B routers | ✅ | M5 | `TrafficSplit({...})` / `Environment(...).traffic()`: weighted pick per call, `sticky_key=` pins a user (salted hash), `response.variant` names the model, `summary()` compares calls, errors, latency, tokens and cost. Client-side because targets span backends; SageMaker variant weights can't route between inference components. Live 2026-10-30 (Nova Micro vs Lite canary, SDK and `skyhammer chat app@env`) |
+| SV-12 | Environments & promotion (dev → prod) | ✅ | M5 | `Environment("support-qwen@prod")`: `promote`, `split` (canary), `rollback`, `history`, `delete`; `LLM.get("app@env")` resolves it; `skyhammer env list/show/promote/split/rollback/delete`. Stored in `manifests/envs/<app>.json` (last writer wins, 20 changes of history). Live 2026-10-30 |
 | SV-13 | Move SageMaker-served model to Bedrock | ✅ | M3 | `ft.deploy(serving='bedrock')` imports stored weights (pre-flight checked), then removes the endpoint. Live: 14.8 min import, first call 2 min (CMI warm-up), chat works |
 | SV-14 | Quantization / speculative decoding | ⬜ | M6 | LMI options on SageMaker; not exposed by Bedrock CMI |
 | SV-18 | GPU capacity fallback | ✅ | M4 | SageMaker instance pools: AWS's recommended instance first, then up to 4 GPU types with the same GPU count, at least the validated host's RAM and vCPUs, and enough GPU memory for the model; `instance_type=[...]` sets the order, a string pins one; 20-min provisioning timeout. Live 2026-10-30: ml.g6e.2xlarge had no capacity three times; endpoints came up on ml.g5.xlarge (2 min) and ml.g6.4xlarge (3 min), and one attempt with no capacity anywhere failed cleanly after 20 min |
@@ -275,8 +275,8 @@ RFT (built, live run pending), TR-11 RLAIF, TR-15 (checkpoint resume), SE-5 live
 PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
-SV-10 provisioned throughput, SV-11 traffic splitting, SV-12 environments/aliases,
-DX-8 async, DX-14 framework adapters, SI-24 Responses API, TR-14 CPT, DA-11
+Done: SV-11 traffic splitting, SV-12 environments (2026-10-30). Remaining: SV-10
+provisioned throughput, DX-8 async, DX-14 framework adapters, SI-24 Responses API, TR-14 CPT, DA-11
 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
 PK-7 **PyPI 1.0**.
 

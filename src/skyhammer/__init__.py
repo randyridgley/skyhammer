@@ -5,6 +5,7 @@ from skyhammer.batch import BatchJob
 from skyhammer.catalog import CATALOG, Technique, TrainingType
 from skyhammer.config import configure
 from skyhammer.dataset import Dataset
+from skyhammer.environments import Environment
 from skyhammer.errors import (
     CostLimitExceededError,
     DatasetValidationError,
@@ -19,6 +20,7 @@ from skyhammer.evaluation import EvalJob
 from skyhammer.graders import Grader, grader, reference_answer
 from skyhammer.jobs import FineTuningJob, JobState
 from skyhammer.llm import LLM
+from skyhammer.traffic import TrafficSplit
 
 __version__ = "0.1.0"
 
@@ -29,6 +31,7 @@ __all__ = [
     "CostLimitExceededError",
     "Dataset",
     "DatasetValidationError",
+    "Environment",
     "EvalJob",
     "FineTuningJob",
     "Grader",
@@ -38,6 +41,7 @@ __all__ = [
     "SpendLimitExceededError",
     "Technique",
     "ThrottledError",
+    "TrafficSplit",
     "TrainingType",
     "UnsupportedParameterError",
     "UnsupportedRouteError",

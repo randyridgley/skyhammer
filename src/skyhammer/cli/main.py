@@ -11,7 +11,6 @@ from rich.console import Console
 from rich.table import Table
 
 from skyhammer import bootstrap as bootstrap_mod
-from skyhammer import registry
 from skyhammer.backends import get_backend
 from skyhammer.batch import BatchJob
 from skyhammer.catalog import (
@@ -25,7 +24,7 @@ from skyhammer.catalog import (
 )
 from skyhammer.config import configure
 from skyhammer.dataset import Dataset
-from skyhammer.errors import BootstrapMissingError, SkyhammerError
+from skyhammer.errors import SkyhammerError
 from skyhammer.evaluation import evaluate
 from skyhammer.graders import Grader, GraderKind
 from skyhammer.jobs import FineTuningJob
@@ -48,6 +47,10 @@ auth_app = typer.Typer(help="Bedrock API keys.", no_args_is_help=True)
 eval_app = typer.Typer(help="Score models on a dataset with graders.", no_args_is_help=True)
 deployments_app = typer.Typer(help="Skyhammer-created endpoints/deployments.", no_args_is_help=True)
 budget_app = typer.Typer(help="Monthly budgets with email alerts, per model.", no_args_is_help=True)
+env_app = typer.Typer(
+    help="Environments (app@env): promote, canary-split and roll back models.",
+    no_args_is_help=True,
+)
 app.add_typer(models_app, name="models")
 app.add_typer(datasets_app, name="datasets")
 app.add_typer(jobs_app, name="jobs")
@@ -56,6 +59,7 @@ app.add_typer(auth_app, name="auth")
 app.add_typer(deployments_app, name="deployments")
 app.add_typer(eval_app, name="eval")
 app.add_typer(budget_app, name="budget")
+app.add_typer(env_app, name="env")
 
 console = Console()
 err = Console(stderr=True)
@@ -503,14 +507,10 @@ def deploy(
 
 
 def _resolve_llm(name: str) -> LLM:
-    """Your fine-tuned model by that name if one exists, else a Bedrock model alias/ID."""
-    session = Session()
-    try:
-        if registry.load_model(session, name):
-            return LLM.get(name, session=session)
-    except BootstrapMissingError:
-        pass  # no bootstrap: serverless calls still work
-    return LLM(name, session=session)
+    """An environment, your fine-tuned model by that name, or a Bedrock model alias/ID."""
+    from skyhammer.environments import resolve_llm
+
+    return resolve_llm(name, session=Session())
 
 
 @app.command()
@@ -525,10 +525,17 @@ def chat(
     routing: Annotated[str | None, typer.Option(help="geo | global | region")] = None,
     reasoning: Annotated[str | None, typer.Option(help="low | medium | high")] = None,
 ) -> None:
-    """Prompt a fine-tuned model (by name) or any Bedrock model (alias or ID)."""
-    llm = _resolve_llm(name)
-    if routing:
-        llm._routing = Routing(routing)
+    """Prompt a fine-tuned model (by name), an environment (app@env, honoring its traffic
+    split) or any Bedrock model (alias or ID)."""
+    target: Any
+    if "@" in name:
+        from skyhammer.environments import Environment
+
+        target = Environment(name, session=Session()).traffic()
+    else:
+        target = _resolve_llm(name)
+        if routing:
+            target._routing = Routing(routing)
     messages = [{"role": "system", "content": system}] if system else []
     messages.append({"role": "user", "content": prompt})
     params: dict[str, Any] = {
@@ -539,7 +546,7 @@ def chat(
     }
     params = {k: v for k, v in params.items() if v is not None}
     if stream:
-        s = llm.chat.completions.create(messages=messages, stream=True, **params)
+        s = target.chat.completions.create(messages=messages, stream=True, **params)
         for chunk in s:
             for ch in chunk.choices:
                 if ch.delta.content:
@@ -547,7 +554,7 @@ def chat(
         console.print()
         resp = s.final()
     else:
-        resp = llm.chat.completions.create(messages=messages, **params)
+        resp = target.chat.completions.create(messages=messages, **params)
         msg = resp.choices[0].message
         if msg.reasoning_content:
             console.print(f"[dim]{msg.reasoning_content.strip()[:500]}[/]", highlight=False)
@@ -555,7 +562,8 @@ def chat(
     u = resp.usage
     cost = f", ${u.cost_usd:.6f}" if u.cost_usd is not None else ""
     console.print(
-        f"[dim]{llm.model_id}: {u.prompt_tokens} in / {u.completion_tokens} out"
+        f"[dim]{resp.variant or target.model_id}: {u.prompt_tokens} in / "
+        f"{u.completion_tokens} out"
         f"{cost}, finish={resp.choices[0].finish_reason}[/]"
     )
 
@@ -730,6 +738,90 @@ def deployments_prune(
     for d in idle:
         delete_deployment(session, d)
         console.print(f"Deleted {d.name}")
+
+
+def _show_targets(targets: dict[str, float]) -> str:
+    total = sum(targets.values()) or 1
+    return ", ".join(f"{m} {w / total:.0%}" for m, w in targets.items())
+
+
+@env_app.command("list")
+def env_list() -> None:
+    """Every environment and the models it serves."""
+    from skyhammer.environments import list_environments
+
+    table = Table("environment", "serves", "updated", "note")
+    for e in list_environments(Session()):
+        at = time.strftime("%Y-%m-%d %H:%M", time.localtime(e["at"])) if e.get("at") else ""
+        table.add_row(e["ref"], _show_targets(e["targets"]), at, e.get("note") or "")
+    console.print(table)
+
+
+@env_app.command("show")
+def env_show(ref: str) -> None:
+    """What an environment serves now, and its history."""
+    from skyhammer.environments import Environment
+
+    env = Environment(ref, session=Session())
+    console.print(f"{env.ref}: {_show_targets(env.targets)}")
+    for h in env.history:
+        at = time.strftime("%Y-%m-%d %H:%M", time.localtime(h["at"])) if h.get("at") else ""
+        console.print(f"  [dim]{at}  {_show_targets(h['targets'])}  {h.get('note') or ''}[/]")
+
+
+@env_app.command("promote")
+def env_promote(
+    model: str,
+    ref: str,
+    note: Annotated[str | None, typer.Option(help="Why (kept in history)")] = None,
+) -> None:
+    """Send all of REF's traffic to MODEL, e.g. support-qwen-v2 to support-qwen@prod."""
+    from skyhammer.environments import Environment
+
+    targets = Environment(ref, session=Session()).promote(model, note=note)
+    console.print(f"{ref} -> {_show_targets(targets)}")
+
+
+@env_app.command("split")
+def env_split(
+    ref: str,
+    weights: Annotated[list[str], typer.Argument(help="MODEL=WEIGHT pairs, e.g. v1=90 v2=10")],
+    note: Annotated[str | None, typer.Option(help="Why (kept in history)")] = None,
+) -> None:
+    """Share REF's traffic by weight, e.g. a 10% canary."""
+    from skyhammer.environments import Environment
+
+    parsed: dict[str, float] = {}
+    for pair in weights:
+        model, sep, weight = pair.rpartition("=")
+        if not sep or not model:
+            raise typer.BadParameter(f"{pair!r}: use MODEL=WEIGHT")
+        try:
+            parsed[model] = float(weight)
+        except ValueError:
+            raise typer.BadParameter(f"{pair!r}: the weight must be a number") from None
+    targets = Environment(ref, session=Session()).split(parsed, note=note)
+    console.print(f"{ref} -> {_show_targets(targets)}")
+
+
+@env_app.command("rollback")
+def env_rollback(ref: str) -> None:
+    """Restore REF's previous models and weights."""
+    from skyhammer.environments import Environment
+
+    targets = Environment(ref, session=Session()).rollback()
+    console.print(f"{ref} -> {_show_targets(targets)}")
+
+
+@env_app.command("delete")
+def env_delete(ref: str, yes: Annotated[bool, typer.Option("--yes", "-y")] = False) -> None:
+    """Remove an environment (its models are untouched)."""
+    from skyhammer.environments import Environment
+
+    if not yes:
+        typer.confirm(f"Delete environment {ref}?", abort=True)
+    Environment(ref, session=Session()).delete()
+    console.print(f"Deleted {ref}")
 
 
 @app.command("cleanup")
