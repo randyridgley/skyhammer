@@ -94,9 +94,13 @@ def test_rft_needs_a_lambda_reward(session: Session) -> None:
     request = plan(session)
     with pytest.raises(UnsupportedParameterError, match="deploy the grader"):
         backend.build_request(request, "s3://t", None, "s3://o")
+    # LLM judges (RLAIF) deploy as a reward Lambda too; submit passes its ARN.
     request.grader = Grader.llm_judge("nova-pro", "Is it correct?")
-    with pytest.raises(UnsupportedParameterError, match="Lambda rewards"):
-        backend.build_request(request, "s3://t", None, "s3://o", grader_arn=LAMBDA)
+    judged = backend.build_request(request, "s3://t", None, "s3://o", grader_arn=LAMBDA)
+    assert (
+        judged["customizationConfig"]["rftConfig"]["graderConfig"]["lambdaGrader"]["lambdaArn"]
+        == LAMBDA
+    )
     request.grader = Grader.from_lambda(LAMBDA)
     kwargs = backend.build_request(request, "s3://t", None, "s3://o")
     assert (

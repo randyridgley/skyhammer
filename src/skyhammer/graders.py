@@ -104,7 +104,8 @@ class Grader:
     def function_name_for(self, contract: str) -> str:
         """Lambda name for a deployed Python grader, versioned by the deployed module (the
         grader's code plus the reward-contract adapter, so adapter fixes redeploy)."""
-        code = (lambda_source(self) if self.fn else self.fingerprint()) + contract
+        deployable = self.fn or self.kind is GraderKind.LLM_JUDGE
+        code = (lambda_source(self) if deployable else self.fingerprint()) + contract
         digest = hashlib.sha256(code.encode()).hexdigest()
         suffix = "-br" if contract == "bedrock" else ""
         return f"skyhammer-grader-{self.name}"[:52] + f"{suffix}-{digest[:8]}"
@@ -120,14 +121,18 @@ class Grader:
         and Bedrock both send a plain list but expect different replies, so ``contract``
         ("sagemaker" or "bedrock") picks the reply shape and gets its own function. Graders
         must be self-contained (standard library only; ``requirements`` aren't packaged yet).
+
+        LLM judges deploy too (RLAIF): the Lambda asks the judge model on Bedrock to score
+        each answer against the rubric, exactly like a local eval, so any RL backend can use
+        a judge as its reward. The grader role needs ``bedrock:InvokeModel`` (bootstrap).
         """
         from skyhammer import tags as tagging
         from skyhammer.session import get_session
 
         if self.kind is GraderKind.LAMBDA:
             return self
-        if self.kind is not GraderKind.PYTHON or self.fn is None:
-            raise TypeError("Only Python graders can be deployed; LLM judges run in Bedrock")
+        if self.kind is GraderKind.PYTHON and self.fn is None:
+            raise TypeError("Only Python graders and LLM judges can be deployed")
         if self.requirements:
             raise NotImplementedError("Packaging grader requirements isn't supported yet")
         if contract not in ("sagemaker", "bedrock"):
@@ -136,6 +141,11 @@ class Grader:
         res = session.resources
         lam = session.client("lambda", region=region)  # same region as the training job
         name = self.function_name_for(contract)
+        judge_model_id = None
+        if self.kind is GraderKind.LLM_JUDGE:
+            from skyhammer.llm import LLM
+
+            judge_model_id = LLM(self.judge_model or DEFAULT_JUDGE, session=session).model_id
         try:
             arn = lam.get_function(FunctionName=name)["Configuration"]["FunctionArn"]
             return Grader.from_lambda(arn, name=self.name)
@@ -148,8 +158,9 @@ class Grader:
             Runtime="python3.12",
             Role=res.grader_role_arn,
             Handler="skyhammer_grader.lambda_handler",
-            Code={"ZipFile": _lambda_zip(self)},
-            Timeout=max(self.timeout_s, 60),  # RL reward calls send batches of samples
+            Code={"ZipFile": _lambda_zip(self, judge_model_id)},
+            # RL reward calls send batches of samples; a judge makes a model call for each.
+            Timeout=300 if self.kind is GraderKind.LLM_JUDGE else max(self.timeout_s, 60),
             MemorySize=256,
             Description=f"Skyhammer grader {self.name} ({contract} reward contract)",
             Environment={"Variables": {"SKYHAMMER_REWARD_CONTRACT": contract}},
@@ -251,6 +262,8 @@ def _invoke_lambda(arn: str, sample: dict[str, Any], output: str) -> float:
 
 # ---- LLM as a judge (EV-5) ----
 
+DEFAULT_JUDGE = "nova-pro"
+
 _JUDGE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -279,7 +292,7 @@ def judge_prompt(rubric: str, sample: dict[str, Any], output: str) -> str:
 def _judge(g: Grader, sample: dict[str, Any], output: str) -> float:
     from skyhammer.llm import LLM
 
-    resp = LLM(g.judge_model or "nova-pro").chat.completions.create(
+    resp = LLM(g.judge_model or DEFAULT_JUDGE).chat.completions.create(
         messages=[{"role": "user", "content": judge_prompt(g.rubric or "", sample, output)}],
         response_format={
             "type": "json_schema",
@@ -356,21 +369,60 @@ def lambda_handler(event, context):
 """
 
 
-def lambda_source(g: Grader) -> str:
-    """The deployed module: helpers, the grader's own source, and the reward-contract adapter.
+_JUDGE_LAMBDA = """
+import re as _re
+
+import boto3 as _boto3
+
+_JUDGE_MODEL = __MODEL__
+_RUBRIC = __RUBRIC__
+_runtime = None
+
+
+def _judge_score(sample, output):
+    global _runtime
+    _runtime = _runtime or _boto3.client("bedrock-runtime")
+    prompt = judge_prompt(_RUBRIC, sample, output) + (
+        '\\n\\nReply with JSON only: {"reasoning": "<one sentence>", "score": <1-5>}'
+    )
+    resp = _runtime.converse(
+        modelId=_JUDGE_MODEL,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"temperature": 0, "maxTokens": 300},
+    )
+    text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
+    match = _re.search(r'"score"\\s*:\\s*([1-5])', text)
+    return (int(match.group(1)) - 1) / 4 if match else 0.0
+"""
+
+
+def lambda_source(g: Grader, judge_model_id: str | None = None) -> str:
+    """The deployed module: helpers, the grader's own source (or the LLM-judge call), and
+    the reward-contract adapter.
 
     ``reference_answer`` is included so graders can use it without importing skyhammer.
+    LLM judges score 1-5 with the same prompt as local evals, mapped to 0-1.
     """
-    assert g.fn is not None
-    helpers = "".join(inspect.getsource(h) + "\n\n" for h in (reference_answer, _normalize))
-    src = textwrap.dedent(inspect.getsource(g.fn))
-    src = "\n".join(line for line in src.splitlines() if not line.startswith("@"))
+    helpers: list[Callable[..., Any]] = [reference_answer, _normalize]
     head = "from typing import Any\nimport json\n\n\n"
-    adapter = _LAMBDA_ADAPTER.replace("__FN__", g.fn.__name__).replace("__NAME__", g.name)
-    return head + helpers + src + adapter
+    if g.kind is GraderKind.LLM_JUDGE:
+        model = judge_model_id or g.judge_model or DEFAULT_JUDGE
+        src = _JUDGE_LAMBDA.replace("__MODEL__", repr(model)).replace(
+            "__RUBRIC__", repr(g.rubric or "")
+        )
+        helpers.append(judge_prompt)
+        fn_name = "_judge_score"
+    else:
+        assert g.fn is not None
+        src = textwrap.dedent(inspect.getsource(g.fn))
+        src = "\n".join(line for line in src.splitlines() if not line.startswith("@"))
+        fn_name = g.fn.__name__
+    code = "".join(inspect.getsource(h) + "\n\n" for h in helpers)
+    adapter = _LAMBDA_ADAPTER.replace("__FN__", fn_name).replace("__NAME__", g.name)
+    return head + code + src + adapter
 
 
-def _lambda_zip(g: Grader) -> bytes:
+def _lambda_zip(g: Grader, judge_model_id: str | None = None) -> bytes:
     import io
     import zipfile
 
@@ -378,5 +430,5 @@ def _lambda_zip(g: Grader) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         info = zipfile.ZipInfo("skyhammer_grader.py", date_time=(2020, 1, 1, 0, 0, 0))
         info.external_attr = 0o644 << 16
-        z.writestr(info, lambda_source(g))
+        z.writestr(info, lambda_source(g, judge_model_id))
     return buf.getvalue()

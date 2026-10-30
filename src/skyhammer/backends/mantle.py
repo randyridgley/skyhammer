@@ -24,7 +24,6 @@ from skyhammer.backends.base import (
 from skyhammer.backends.bedrock import RFT_MAX_PROMPTS, RFT_MIN_PROMPTS, to_bedrock_rft
 from skyhammer.catalog import DatasetLimits, ModelEntry, Technique, TrainingType
 from skyhammer.errors import UnsupportedParameterError
-from skyhammer.graders import GraderKind
 from skyhammer.jobs import (
     Checkpoint,
     JobHandle,
@@ -96,10 +95,6 @@ class BedrockMantleBackend:
         g = request.grader
         if g is None:
             raise UnsupportedParameterError("rft requires a grader (a Python function or Lambda)")
-        if g.kind is GraderKind.LLM_JUDGE:
-            raise UnsupportedParameterError(
-                "bedrock-mantle RFT takes Lambda rewards; write the judge call in a @grader"
-            )
         arn = grader_arn if grader_arn is not None else g.lambda_arn
         if arn is None:
             raise UnsupportedParameterError("deploy the grader first (submit does this)")

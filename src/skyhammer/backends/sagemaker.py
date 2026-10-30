@@ -46,7 +46,6 @@ from skyhammer.catalog import (
 )
 from skyhammer.errors import SkyhammerError, UnsupportedParameterError
 from skyhammer.formats import to_sagemaker_dpo, to_sagemaker_rlvr, to_sagemaker_sft
-from skyhammer.graders import GraderKind
 from skyhammer.hub import HostingConfig, HubClient, ParamSpec, Recipe, hub_technique
 from skyhammer.jobs import (
     Checkpoint,
@@ -135,12 +134,11 @@ def _technique(
         g = request.grader
         if g is None:
             raise UnsupportedParameterError("rft requires a grader")
-        if g.kind in (GraderKind.LAMBDA, GraderKind.PYTHON):
-            if not evaluator_arn:
-                raise UnsupportedParameterError("register the reward Lambda first (submit does)")
-            return "RLVR", evaluator_arn
-        # LLM judges need a SageMaker reward-prompt evaluator (RLAIF, TR-11).
-        raise NotImplementedError("LLM-judge rewards (RLAIF) on SageMaker are planned for M4")
+        # LLM judges (RLAIF) deploy as a reward Lambda that calls the judge model, so every
+        # grader kind trains through the same Lambda evaluator.
+        if not evaluator_arn:
+            raise UnsupportedParameterError("register the reward Lambda first (submit does)")
+        return "RLVR", evaluator_arn
     if t is Technique.DISTILLATION:  # LLM.create_distillation_job runs teacher answers + SFT
         raise UnsupportedParameterError("use LLM.create_distillation_job for open-weight students")
     raise NotImplementedError("Continued pre-training on SageMaker is planned for M4")

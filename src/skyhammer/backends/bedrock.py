@@ -316,15 +316,10 @@ def to_bedrock_rft(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _rft_config(request: TrainingRequest, grader_arn: str | None) -> dict[str, Any]:
-    from skyhammer.graders import GraderKind
 
     g = request.grader
     if g is None:
         raise UnsupportedParameterError("rft requires a grader (a Python function or Lambda)")
-    if g.kind is GraderKind.LLM_JUDGE:
-        raise UnsupportedParameterError(
-            "Bedrock RFT takes Lambda rewards; write the judge call in a @grader function"
-        )
     arn = grader_arn if grader_arn is not None else g.lambda_arn
     if arn is None:
         raise UnsupportedParameterError("deploy the grader first (submit does this)")

@@ -20,6 +20,11 @@ def correct_sum(sample: dict, output: str) -> float:
 
 print(correct_sum({"answer": "7"}, "3 + 4 = 7"))  # test the reward locally first: 1.0
 
+# No rule to check? Use an LLM judge as the reward (RLAIF). Skyhammer deploys it as a Lambda
+# that asks the judge model on Bedrock to score each answer 1-5 against your rubric:
+#   reward = skyhammer.Grader.llm_judge("nova-pro", "Reward correct, concise, polite answers.")
+#   LLM("qwen3-0.6b").create_rft_job(prompts, grader=reward, output_model="polite-rl")
+
 problems = Dataset.from_records(
     [
         {
