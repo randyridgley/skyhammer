@@ -216,6 +216,55 @@ def test_image_data_url_part() -> None:
     assert image["format"] == "png" and image["source"]["bytes"].startswith(b"\x89PNG")
 
 
+def user_parts(*parts: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{"role": "user", "content": [{"type": "text", "text": "describe"}, *parts]}]
+
+
+def test_video_data_url_and_s3_parts() -> None:
+    mp4 = base64.b64encode(b"\x00\x00\x00\x18ftypmp42").decode()
+    req = valid(
+        to_converse_request(
+            "m",
+            user_parts(
+                {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{mp4}"}},
+                {"type": "video_url", "video_url": "s3://bucket/clips/demo.MOV"},
+                {
+                    "type": "video_url",
+                    "video_url": {
+                        "url": "s3://bucket/raw/clip",
+                        "format": "webm",
+                        "bucket_owner": "111122223333",
+                    },
+                },
+                {"type": "image_url", "image_url": {"url": "s3://bucket/photo.jpg"}},
+            ),
+        )
+    )
+    inline, s3, owned, image = [b for b in req["messages"][0]["content"][1:]]
+    assert inline["video"]["format"] == "mp4"
+    assert inline["video"]["source"]["bytes"].startswith(b"\x00\x00\x00\x18ftyp")
+    assert s3 == {
+        "video": {"format": "mov", "source": {"s3Location": {"uri": "s3://bucket/clips/demo.MOV"}}}
+    }
+    assert owned["video"]["format"] == "webm"
+    assert owned["video"]["source"]["s3Location"]["bucketOwner"] == "111122223333"
+    assert image["image"] == {
+        "format": "jpeg",
+        "source": {"s3Location": {"uri": "s3://bucket/photo.jpg"}},
+    }
+
+
+def test_media_parts_reject_unknown_formats() -> None:
+    with pytest.raises(ValueError, match="video_url must be"):
+        to_converse_request("m", user_parts({"type": "video_url", "video_url": "https://x/v.mp4"}))
+    with pytest.raises(ValueError, match="Can't tell the video format"):
+        to_converse_request("m", user_parts({"type": "video_url", "video_url": "s3://b/clip"}))
+    with pytest.raises(ValueError, match="image_url must be"):
+        to_converse_request(
+            "m", user_parts({"type": "image_url", "image_url": "data:image/tiff;base64,AA=="})
+        )
+
+
 EVENTS = [
     {"messageStart": {"role": "assistant"}},
     {

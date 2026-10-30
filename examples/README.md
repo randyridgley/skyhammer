@@ -7,6 +7,8 @@ e.g. `uv run python examples/01_chat.py`. Examples that create billable resource
 what they cost in their docstring and clean up after themselves. Prerequisites: AWS
 credentials (or a Bedrock API key, see 12) and, for fine-tuning, `skyhammer bootstrap`.
 
+These examples are also the cookbook on the [docs site](https://randyridgley.github.io/skyhammer/) (DX-13), one guide page each.
+
 Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; the
 **Covers** column lists the roadmap IDs each file demonstrates (enforced by
 `tests/unit/test_examples.py`).
@@ -24,8 +26,9 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [07_costs_and_spend_limits.py](07_costs_and_spend_limits.py) | `usage.cost_usd`, session spend, `max_spend_usd` | SI-11, SI-12, OP-1 |
 | [08_embeddings_and_rerank.py](08_embeddings_and_rerank.py) | Embeddings for semantic search, then rerank | SI-14, SI-15 |
 | [09_batch_inference.py](09_batch_inference.py) | Discounted batch jobs over 100+ requests | SI-13, SV-9 |
-| [10_prompt_caching.py](10_prompt_caching.py) | Cache a long prompt prefix | SI-21 |
-| [11_multimodal_and_completions.py](11_multimodal_and_completions.py) | Images, documents, and the completions API | SI-20, SI-23 |
+| [10_prompt_caching.py](10_prompt_caching.py) | Cache a long prompt prefix | SI-21, SV-16 |
+| [11_multimodal_and_completions.py](11_multimodal_and_completions.py) | Images, documents, video (inline or S3), and the completions API | SI-20, SI-23 |
+| [29_guardrails.py](29_guardrails.py) | Block topics or content on any call; `content_filter` and traces | SI-22 |
 | [12_api_keys_and_openai_client.py](12_api_keys_and_openai_client.py) | Bedrock API keys; the OpenAI SDK against Bedrock | SI-16, SI-17 |
 | [13_model_discovery_and_quotas.py](13_model_discovery_and_quotas.py) | List models and routes, quotas, throttling errors | SI-4, SI-18 |
 
@@ -33,7 +36,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 
 | Example | What it shows | Covers |
 |---|---|---|
-| [14_datasets.py](14_datasets.py) | Load, validate against AWS limits, exact token counts, auto-fix, other sources | DA-1, DA-2, DA-4, DA-5, DA-6, DA-7, DA-8 |
+| [14_datasets.py](14_datasets.py) | Load, validate against AWS limits, exact token counts, auto-fix (repair roles, truncate, drop), other sources | DA-1, DA-3, DA-2, DA-4, DA-5, DA-6, DA-7, DA-8 |
 | [15_plan_and_cost_guardrails.py](15_plan_and_cost_guardrails.py) | Routing, live price estimates, `max_cost_usd`, RL time caps, tags, KMS, residency, EULAs, CloudTrail audit | TR-5, TR-13, OP-1, OP-2, OP-3, OP-7, SE-1, SE-2, SE-8 |
 | [16_fine_tune_nova.py](16_fine_tune_nova.py) | Nova SFT on Bedrock → serverless deploy → chat → delete | TR-1, SV-2, DX-2 |
 | [17_fine_tune_open_weight.py](17_fine_tune_open_weight.py) | Open-weight SFT on SageMaker → auto-import to Bedrock; hyperparameter checks; cold starts | TR-2, TR-3, TR-4, SV-3, SE-8 |

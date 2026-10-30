@@ -1,0 +1,70 @@
+{
+  "output": {
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "text": "Sorry, I can't help with investment advice."
+        }
+      ]
+    }
+  },
+  "stopReason": "guardrail_intervened",
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "totalTokens": 0
+  },
+  "metrics": {
+    "latencyMs": 302
+  },
+  "trace": {
+    "guardrail": {
+      "modelOutput": [],
+      "inputAssessment": {
+        "fh486s6dxyqm": {
+          "topicPolicy": {
+            "topics": [
+              {
+                "name": "Investment advice",
+                "type": "DENY",
+                "action": "BLOCKED",
+                "detected": true
+              }
+            ]
+          },
+          "invocationMetrics": {
+            "guardrailProcessingLatency": 177,
+            "usage": {
+              "topicPolicyUnits": 1,
+              "contentPolicyUnits": 0,
+              "wordPolicyUnits": 0,
+              "sensitiveInformationPolicyUnits": 0,
+              "sensitiveInformationPolicyFreeUnits": 0,
+              "contextualGroundingPolicyUnits": 0,
+              "contentPolicyImageUnits": 0,
+              "automatedReasoningPolicyUnits": 0,
+              "automatedReasoningPolicies": 0
+            },
+            "guardrailCoverage": {
+              "textCharacters": {
+                "guarded": 41,
+                "total": 41
+              }
+            }
+          },
+          "appliedGuardrailDetails": {
+            "guardrailId": "fh486s6dxyqm",
+            "guardrailVersion": "DRAFT",
+            "guardrailArn": "arn:aws:bedrock:us-east-1:649037252677:guardrail/fh486s6dxyqm",
+            "guardrailOrigin": [
+              "REQUEST"
+            ],
+            "guardrailOwnership": "SELF"
+          }
+        }
+      },
+      "actionReason": "Guardrail blocked."
+    }
+  }
+}

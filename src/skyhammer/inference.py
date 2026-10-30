@@ -9,6 +9,10 @@ model-specific fields through ``additionalModelRequestFields``).
     tools, tool_choice, response_format, reasoning_effort, service_tier,
     guardrail={"id", "version", "trace"?}, latency="optimized", extra_body
 
+``guardrail`` works on Converse and on imported models (InvokeModel); a blocked request or
+answer comes back with ``finish_reason="content_filter"`` and the guardrail's message as
+content. SageMaker endpoints don't support Bedrock guardrails, so passing one raises.
+
 Responses are OpenAI-shaped. ``message.reasoning_content`` carries model reasoning (Bedrock
 ``reasoningContent`` blocks, or ``<think>`` text split out of the answer). ``.raw`` holds the
 original Bedrock response.
@@ -208,24 +212,61 @@ def _content_blocks(content: Any) -> list[dict[str, Any]]:
                 blocks.append(dict(CACHE_POINT))
         elif kind == "cache_point":
             blocks.append(dict(CACHE_POINT))
-        elif kind == "image_url":
-            url = (
-                part["image_url"]["url"]
-                if isinstance(part["image_url"], dict)
-                else part["image_url"]
-            )
-            m = re.match(r"data:image/(\w+);base64,(.+)", url, re.S)
-            if not m:
-                raise ValueError("image_url must be a base64 data URL (data:image/png;base64,...)")
-            fmt = "jpeg" if m.group(1) == "jpg" else m.group(1)
-            blocks.append(
-                {"image": {"format": fmt, "source": {"bytes": base64.b64decode(m.group(2))}}}
-            )
+        elif kind in ("image_url", "video_url"):
+            blocks.append(_media_block(kind.removesuffix("_url"), part[kind]))
         elif kind == "file":
             blocks.append(_document_block(part["file"]))
         else:
             raise ValueError(f"Unsupported content part type {kind!r}")
     return blocks
+
+
+_MEDIA_FORMATS = {
+    "image": {"png": "png", "jpeg": "jpeg", "jpg": "jpeg", "gif": "gif", "webp": "webp"},
+    "video": {
+        "mp4": "mp4",
+        "mov": "mov",
+        "quicktime": "mov",
+        "webm": "webm",
+        "mkv": "mkv",
+        "x-matroska": "mkv",
+        "flv": "flv",
+        "x-flv": "flv",
+        "mpeg": "mpeg",
+        "mpg": "mpg",
+        "wmv": "wmv",
+        "x-ms-wmv": "wmv",
+        "3gp": "three_gp",
+        "3gpp": "three_gp",
+    },
+}
+
+
+def _media_block(kind: str, ref: Any) -> dict[str, Any]:
+    """``image_url``/``video_url`` part -> Converse image/video block.
+
+    The URL is a base64 data URL (``data:video/mp4;base64,...``) or an ``s3://`` URI, which
+    the model reads directly (Nova; needed for videos over the 25 MB inline limit).
+    """
+    url = ref["url"] if isinstance(ref, dict) else ref
+    formats = _MEDIA_FORMATS[kind]
+    if url.startswith("s3://"):
+        ext = url.rsplit(".", 1)[-1].lower()
+        fmt = (ref.get("format") if isinstance(ref, dict) else None) or formats.get(ext)
+        if fmt not in formats.values():
+            raise ValueError(f"Can't tell the {kind} format of {url}; pass {{'format': ...}}")
+        source: dict[str, Any] = {"s3Location": {"uri": url}}
+        if isinstance(ref, dict) and ref.get("bucket_owner"):
+            source["s3Location"]["bucketOwner"] = ref["bucket_owner"]
+        return {kind: {"format": fmt, "source": source}}
+    m = re.match(rf"data:{kind}/([\w.+-]+);base64,(.+)", url, re.S)
+    if not m or m.group(1).lower() not in formats:
+        raise ValueError(
+            f"{kind}_url must be an s3:// URI or a base64 data URL "
+            f"(data:{kind}/{next(iter(formats))};base64,...) of a supported format"
+        )
+    fmt = formats[m.group(1).lower()]
+    return {kind: {"format": fmt, "source": {"bytes": base64.b64decode(m.group(2))}}}
 
 
 _DOC_FORMATS = {
@@ -586,8 +627,25 @@ def to_openai_chat_body(messages: list[dict[str, Any]], **params: Any) -> dict[s
     return body
 
 
+def invoke_guardrail_args(params: dict[str, Any]) -> dict[str, str]:
+    """InvokeModel takes the guardrail as request parameters, not in the body."""
+    g = params.get("guardrail")
+    if not g:
+        return {}
+    args = {"guardrailIdentifier": g["id"], "guardrailVersion": str(g.get("version", "DRAFT"))}
+    if g.get("trace"):
+        args["trace"] = "ENABLED"
+    return args
+
+
+def _guardrail_blocked(resp: dict[str, Any]) -> bool:
+    # InvokeModel keeps the model's own stop reason and flags the block separately.
+    return resp.get("amazon-bedrock-guardrailAction") == "INTERVENED"
+
+
 def from_openai_chat_response(model_id: str, resp: dict[str, Any]) -> ChatCompletion:
     usage = resp.get("usage", {})
+    blocked = _guardrail_blocked(resp)
     choices = []
     for i, c in enumerate(resp.get("choices", [])):
         msg = c.get("message", {})
@@ -608,7 +666,7 @@ def from_openai_chat_response(model_id: str, resp: dict[str, Any]) -> ChatComple
                     calls or None,
                     msg.get("reasoning_content") or think,
                 ),
-                c.get("finish_reason") or "stop",
+                "content_filter" if blocked else c.get("finish_reason") or "stop",
             )
         )
     return ChatCompletion(
@@ -820,6 +878,7 @@ def openai_stream_chunks(model_id: str, body: Any) -> Iterator[ChatCompletionChu
             continue
         data = json.loads(payload)
         u = data.get("usage")
+        blocked = _guardrail_blocked(data)
         choices = []
         for c in data.get("choices", []):
             delta = c.get("delta") or {}
@@ -839,7 +898,9 @@ def openai_stream_chunks(model_id: str, body: Any) -> Iterator[ChatCompletionChu
                 ChunkChoice(
                     c.get("index", 0),
                     Delta(role=delta.get("role"), content=content, reasoning_content=reasoning),
-                    c.get("finish_reason"),
+                    "content_filter"
+                    if blocked and c.get("finish_reason")
+                    else c.get("finish_reason"),
                 )
             )
         yield ChatCompletionChunk(
@@ -1053,6 +1114,14 @@ _THROTTLE_CODES = {
 }
 
 
+def _check_guardrail_supported(api: str, params: dict[str, Any]) -> None:
+    if params.get("guardrail") and api == "sagemaker":
+        raise ValueError(
+            "Bedrock guardrails don't apply to SageMaker endpoints. Deploy on Bedrock "
+            "(serving='bedrock') or check text yourself with the ApplyGuardrail API."
+        )
+
+
 class _Completions:
     def __init__(self, chat: Chat) -> None:
         self._chat = chat
@@ -1069,6 +1138,7 @@ class _Completions:
 
     def _once(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> ChatCompletion:
         chat = self._chat
+        _check_guardrail_supported(chat.api, params)
         if chat.api == "sagemaker":
             resp = chat.runtime.invoke_endpoint(
                 EndpointName=chat.model_id,
@@ -1084,6 +1154,7 @@ class _Completions:
                 body=json.dumps(to_openai_chat_body(messages, **params)),
                 contentType="application/json",
                 accept="application/json",
+                **invoke_guardrail_args(params),
             )
             return from_openai_chat_response(chat.model_id, json.loads(resp["body"].read()))
         req = to_converse_request(chat.model_id, messages, **params)
@@ -1093,6 +1164,7 @@ class _Completions:
 
     def _stream(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> Stream:
         chat = self._chat
+        _check_guardrail_supported(chat.api, params)
         if chat.api == "sagemaker":
             body = to_openai_chat_body(messages, **params) | {"stream": True}
             resp = chat.runtime.invoke_endpoint_with_response_stream(
@@ -1109,6 +1181,7 @@ class _Completions:
                 body=json.dumps(body),
                 contentType="application/json",
                 accept="application/json",
+                **invoke_guardrail_args(params),
             )
             chunks = openai_stream_chunks(chat.model_id, resp["body"])
         else:

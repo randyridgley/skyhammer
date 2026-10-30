@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import math
+import time
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -109,3 +113,83 @@ def test_api_key_and_openai_client(live_session: Session) -> None:
         messages=[{"role": "user", "content": "Say ok"}],
     )
     assert r.choices[0].message.content
+
+
+@pytest.fixture
+def deny_topic_guardrail(live_session: Session, unique_name: str) -> Iterator[str]:
+    """A guardrail that denies investment advice; deleted afterwards."""
+    bedrock = live_session.client("bedrock")
+    gid: str = bedrock.create_guardrail(
+        name=unique_name,
+        topicPolicyConfig={
+            "topicsConfig": [
+                {
+                    "name": "Investment advice",
+                    "type": "DENY",
+                    "definition": "Recommendations about which stocks or crypto to buy or sell.",
+                    "examples": ["Which stocks should I buy?"],
+                }
+            ]
+        },
+        blockedInputMessaging="BLOCKED",
+        blockedOutputsMessaging="BLOCKED",
+        tags=[{"key": "skyhammer:name", "value": unique_name}],
+    )["guardrailId"]
+    try:
+        while bedrock.get_guardrail(guardrailIdentifier=gid)["status"] != "READY":
+            time.sleep(2)
+        yield gid
+    finally:
+        bedrock.delete_guardrail(guardrailIdentifier=gid)
+
+
+def test_guardrail_blocks_on_call_and_stream(
+    live_session: Session, deny_topic_guardrail: str
+) -> None:
+    llm = LLM("nova-micro", session=live_session)
+    guardrail = {"id": deny_topic_guardrail, "version": "DRAFT", "trace": True}
+    ok = llm.chat.completions.create(
+        messages=[{"role": "user", "content": "What is 2+2?"}], max_tokens=20, guardrail=guardrail
+    )
+    assert ok.choices[0].finish_reason != "content_filter"
+    blocked = llm.chat.completions.create(
+        messages=[{"role": "user", "content": "Which tech stocks should I buy?"}],
+        guardrail=guardrail,
+    )
+    assert blocked.choices[0].finish_reason == "content_filter"
+    assert blocked.choices[0].message.content == "BLOCKED"
+    assert blocked.raw["trace"]["guardrail"]["inputAssessment"]
+    stream = llm.chat.completions.create(
+        messages=[{"role": "user", "content": "Should I buy bitcoin?"}],
+        guardrail=guardrail,
+        stream=True,
+    )
+    final = stream.final()
+    assert final.choices[0].finish_reason == "content_filter"
+    assert final.choices[0].message.content == "BLOCKED"
+
+
+def test_video_inline_and_from_s3(live_session: Session, unique_name: str) -> None:
+    clip = (Path(__file__).parents[2] / "examples" / "data" / "red.mp4").read_bytes()
+    llm = LLM("nova-lite", session=live_session)
+    ask = {"type": "text", "text": "What color fills this video? One word."}
+    inline = {
+        "type": "video_url",
+        "video_url": "data:video/mp4;base64," + base64.b64encode(clip).decode(),
+    }
+    r = llm.chat.completions.create(
+        messages=[{"role": "user", "content": [ask, inline]}], max_tokens=60
+    )
+    assert "red" in (r.choices[0].message.content or "").lower()
+    bucket = live_session.resources_for(live_session.region).bucket
+    key = f"integration/{unique_name}/red.mp4"
+    s3 = live_session.client("s3")
+    s3.put_object(Bucket=bucket, Key=key, Body=clip)
+    try:
+        part = {"type": "video_url", "video_url": f"s3://{bucket}/{key}"}
+        r = llm.chat.completions.create(
+            messages=[{"role": "user", "content": [ask, part]}], max_tokens=60
+        )
+        assert "red" in (r.choices[0].message.content or "").lower()
+    finally:
+        s3.delete_object(Bucket=bucket, Key=key)

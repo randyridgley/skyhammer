@@ -1,4 +1,7 @@
-"""Images and documents in chat, plus the classic completions API.
+"""Images, documents and video in chat, plus the classic completions API.
+
+Media parts are base64 data URLs or, for images and video, ``s3://`` URIs that the model
+reads directly (use S3 for videos over 25 MB). Video understanding needs a Nova model.
 
 Cost: a fraction of a cent. Run: uv run python examples/11_multimodal_and_completions.py
 """
@@ -6,6 +9,7 @@ Cost: a fraction of a cent. Run: uv run python examples/11_multimodal_and_comple
 import base64
 import struct
 import zlib
+from pathlib import Path
 
 from skyhammer import LLM
 
@@ -59,6 +63,22 @@ r = LLM("nova-lite").chat.completions.create(
     max_tokens=30,
 )
 print("document:", r.choices[0].message.content)
+
+video = base64.b64encode((Path(__file__).parent / "data" / "red.mp4").read_bytes()).decode()
+r = LLM("nova-lite").chat.completions.create(
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What color fills this video? One word."},
+                {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{video}"}},
+                # or, from S3: {"type": "video_url", "video_url": "s3://my-bucket/clip.mp4"}
+            ],
+        }
+    ],
+    max_tokens=60,
+)
+print("video:", r.choices[0].message.content)
 
 c = LLM("nova-micro").completions.create(prompt="Name three primary colors:", max_tokens=20)
 print("completion:", c.choices[0].text)

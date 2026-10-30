@@ -1,5 +1,10 @@
 """Datasets: load from files, records, S3, pandas or Hugging Face; validate before spending.
 
+Validation reports every problem with the fix it would apply. ``auto_fix=True`` applies
+them: rename ShareGPT-style roles and merge split turns, truncate conversations that
+are over the model's token limit by dropping the oldest exchanges, and drop rows that
+can't be repaired.
+
 Cost: free (local validation). Run: uv run python examples/14_datasets.py
 """
 
@@ -32,15 +37,37 @@ broken = Dataset.from_records(
                 {"role": "assistant", "content": "a"},
             ]
         },
+        # ShareGPT-style roles and a split user turn: repaired to user/assistant.
+        {
+            "messages": [
+                {"role": "human", "content": "How do I reset my password?"},
+                {"role": "human", "content": "I'm on the mobile app."},
+                {"role": "gpt", "content": "Tap Settings > Account > Reset password."},
+            ]
+        },
+        # Over the model's token limit: the oldest exchange is dropped so the rest fits.
+        {
+            "messages": [
+                {"role": "system", "content": "You are a support agent."},
+                {"role": "user", "content": "Here is my full log: " + "x" * 140_000},
+                {"role": "assistant", "content": "Thanks, that log shows a timeout."},
+                {"role": "user", "content": "So what should I do?"},
+                {"role": "assistant", "content": "Retry on Wi-Fi."},
+            ]
+        },
     ],
     name="broken",
 )
 try:
     LLM("nova-micro").plan("sft", broken, output_model="x")
 except DatasetValidationError as e:
-    print(e.report.summary())
-_, est = LLM("nova-micro").plan("sft", broken, output_model="x", auto_fix=True)  # drop bad rows
-print("after auto-fix:", est)
+    print(e.report.summary())  # each error names the fix auto_fix would apply
+
+# auto_fix applies exactly the fixes listed above: repair roles, truncate, drop the rest.
+request, est = LLM("nova-micro").plan("sft", broken, output_model="x", auto_fix=True)
+for issue in request.dataset.report.applied_fixes:
+    print(f"  line {issue.line}: {issue.fix}")
+print(f"after auto-fix: {request.dataset.num_records} of {len(broken)} rows,", est)
 
 # Other sources:
 #   Dataset.from_s3("s3://my-bucket/train.jsonl")

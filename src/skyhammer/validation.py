@@ -2,10 +2,19 @@
 
 Validation never mutates silently: ``validate`` reports issues and the fixes it *would*
 apply; ``apply_fixes`` performs exactly those fixes and records them in the report.
+
+Fixes, tried in order for each bad chat row:
+
+- ``REPAIR_ROLES``: map role aliases (``human``/``gpt``/``bot``/``model``), drop empty
+  messages and leading assistant turns, merge consecutive same-role messages.
+- ``TRUNCATE``: drop the oldest user/assistant exchanges (keeping the system prompt and
+  the final exchange) until the row fits the model's token limit.
+- ``DROP_ROW``: anything else that can't be repaired.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -28,6 +37,8 @@ class Severity(StrEnum):
 
 class Fix(StrEnum):
     DROP_ROW = "drop_row"
+    REPAIR_ROLES = "repair_roles"
+    TRUNCATE = "truncate"
 
 
 @dataclass(frozen=True)
@@ -36,6 +47,8 @@ class Issue:
     severity: Severity
     message: str
     fix: Fix | None = None
+    # The fixed row for REPAIR_ROLES / TRUNCATE; ``apply_fixes`` uploads it instead.
+    replacement: Record | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -163,6 +176,70 @@ def _check_record(record: Any, technique: Technique) -> list[str]:
     return _check_chat(record.get("messages"), require_final=final)
 
 
+# Role names used by ShareGPT, Gemini and similar exports.
+_ROLE_ALIASES = {
+    "human": "user",
+    "gpt": "assistant",
+    "bot": "assistant",
+    "model": "assistant",
+    "ai": "assistant",
+}
+
+
+def _as_parts(content: Any) -> list[Any]:
+    return content if isinstance(content, list) else [{"type": "text", "text": str(content)}]
+
+
+def _merge_content(a: Any, b: Any) -> Any:
+    if isinstance(a, list) or isinstance(b, list):
+        return [*_as_parts(a), *_as_parts(b)]
+    return f"{a}\n\n{b}"
+
+
+def _repair_messages(messages: Any) -> list[Any] | None:
+    """Return a repaired copy of a chat ``messages`` list, or None if nothing changed."""
+    if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
+        return None
+    out: list[dict[str, Any]] = []
+    for m in copy.deepcopy(messages):
+        role = m.get("role")
+        if isinstance(role, str):
+            m["role"] = _ROLE_ALIASES.get(role.strip().lower(), role.strip().lower())
+        if not message_text(m.get("content")).strip():
+            continue
+        if m["role"] == "assistant" and not any(o["role"] == "user" for o in out):
+            continue  # a conversation can't open with the assistant
+        if out and out[-1]["role"] == m["role"] and m["role"] in ("user", "assistant"):
+            out[-1]["content"] = _merge_content(out[-1]["content"], m["content"])
+            continue
+        out.append(m)
+    return None if out == messages else out
+
+
+def _repair_roles(record: Any, technique: Technique) -> Record | None:
+    if not isinstance(record, dict) or technique in (Technique.CPT, Technique.DPO):
+        return None
+    fixed = _repair_messages(record.get("messages"))
+    return None if fixed is None else {**record, "messages": fixed}
+
+
+def _truncate(
+    record: Record, technique: Technique, limit: int, count: TokenCounter
+) -> Record | None:
+    """Drop the oldest exchanges until ``record`` fits ``limit``; None if it can't."""
+    if technique in (Technique.CPT, Technique.DPO):
+        return None
+    msgs = record["messages"]
+    head = msgs[:1] if msgs[0].get("role") == "system" else []
+    turns = msgs[len(head) :]
+    while len(turns) > 2:
+        turns = turns[2:]  # one user + assistant pair; keeps the user/assistant alternation
+        candidate = {**record, "messages": [*head, *turns]}
+        if count(_record_text(candidate, technique)) <= limit:
+            return candidate
+    return None
+
+
 def parse_jsonl(lines: Iterable[str]) -> list[tuple[int, Any]]:
     """Parse JSONL into (line_number, value) pairs; invalid JSON yields a ``_ParseError``."""
     out: list[tuple[int, Any]] = []
@@ -200,9 +277,24 @@ def validate(
             )
             continue
         problems = _check_record(record, technique)
+        fixed: Record | None = None
         if problems:
-            report.issues.append(Issue(line, Severity.ERROR, "; ".join(problems), Fix.DROP_ROW))
-            continue
+            repaired = _repair_roles(record, technique)
+            if repaired is None or _check_record(repaired, technique):
+                report.issues.append(
+                    Issue(line, Severity.ERROR, "; ".join(dict.fromkeys(problems)), Fix.DROP_ROW)
+                )
+                continue
+            record = fixed = repaired
+            report.issues.append(
+                Issue(
+                    line,
+                    Severity.ERROR,
+                    f"{'; '.join(dict.fromkeys(problems))} (repairable: merge/rename roles)",
+                    Fix.REPAIR_ROLES,
+                    replacement=fixed,
+                )
+            )
         text = _record_text(record, technique)
         reserved = [t for t in limits.reserved_terms if t in text]
         if reserved:
@@ -218,16 +310,25 @@ def validate(
             continue
         tokens = count(text)
         if tokens > limits.max_tokens_per_sample:
+            message = (
+                f"{approx}{tokens:,} tokens exceeds model limit {limits.max_tokens_per_sample:,}"
+            )
+            truncated = _truncate(record, technique, limits.max_tokens_per_sample, count)
+            if truncated is None:
+                report.issues.append(Issue(line, Severity.ERROR, message, Fix.DROP_ROW))
+                continue
+            dropped = len(record["messages"]) - len(truncated["messages"])
+            record = fixed = truncated
+            tokens = count(_record_text(record, technique))
             report.issues.append(
                 Issue(
                     line,
                     Severity.ERROR,
-                    f"{approx}{tokens:,} tokens exceeds model limit "
-                    f"{limits.max_tokens_per_sample:,}",
-                    Fix.DROP_ROW,
+                    f"{message} (truncatable: drop {dropped} oldest messages)",
+                    Fix.TRUNCATE,
+                    replacement=fixed,
                 )
             )
-            continue
         valid_rows += 1
         report.estimated_tokens += tokens
         report.max_sample_tokens = max(report.max_sample_tokens, tokens)
@@ -259,7 +360,9 @@ def validate(
 
 
 def apply_fixes(rows: list[tuple[int, Any]], report: ValidationReport) -> list[Record]:
-    """Drop rows the report marked ``DROP_ROW``; return the remaining records."""
+    """Apply the report's row fixes (drop, repair, truncate); return the records to upload."""
     drop = {i.line for i in report.issues if i.fix is Fix.DROP_ROW}
-    report.applied_fixes = [i for i in report.issues if i.fix is Fix.DROP_ROW]
-    return [r for line, r in rows if line not in drop]
+    # A row can be repaired and then truncated; the last replacement is the final row.
+    replace = {i.line: i.replacement for i in report.issues if i.replacement is not None}
+    report.applied_fixes = [i for i in report.issues if i.line is not None and i.fix]
+    return [replace.get(line, r) for line, r in rows if line not in drop]

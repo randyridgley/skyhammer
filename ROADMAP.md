@@ -56,7 +56,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DX-10 | Structured outputs (JSON schema) | ✅ | M2 | Shipped as SI-8 |
 | DX-11 | Reasoning controls (Qwen3 `<think>`, effort) | ✅ | M2 | Shipped as SI-9 (Qwen3 `<think>` split into reasoning_content) |
 | DX-12 | Rich progress / notebook reprs | ⬜ | M4 | Loss curves from `job.logs()`; HTML repr |
-| DX-13 | Docs site + cookbook examples | ⬜ | M4 | mkdocs; SFT, DPO, RFT, distill, eval, BYO-weights recipes |
+| DX-13 | Docs site + cookbook examples | ✅ | M4 | Material for MkDocs generated from docstrings + `examples/` (a guide page per example: SFT, DPO, RL, distill, eval, BYO weights); published to GitHub Pages on every push to `main` |
 | DX-14 | LangChain / LlamaIndex / LiteLLM adapters | ⬜ | M5 | Thin wrappers over `LLM.chat` |
 
 ### 2.2 Data
@@ -65,7 +65,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 |---|---|---|---|---|
 | DA-1 | Upload datasets (OpenAI chat JSONL) | ✅ | M0 | SSE-KMS, content-addressed S3 keys |
 | DA-2 | Local validation before spend | ✅ | M0 | Model-aware; validation sets need ≥1 row |
-| DA-3 | Auto-fix | 🟡 | M3 | Drops bad rows today; add truncation + role repair |
+| DA-3 | Auto-fix | ✅ | M3 | Opt-in, reported before applied: repair roles (ShareGPT aliases, split turns, empty/leading-assistant turns), truncate oldest exchanges to the token limit, drop the rest |
 | DA-4 | Per-model limits from AWS (rows, tokens) | ✅ | M1.5 | Nova from docs (8–20k rows, 32K ctx, reserved terms like `User:`); SageMaker = longest Hub recipe (Qwen3 4K, Llama 8K); live-tested |
 | DA-5 | Batch-size vs split checks (prevents runtime failures) | ✅ | M1 | Found live: 5 val rows < batch 8 → auto-adjust split |
 | DA-6 | Real tokenizer counts | ✅ | M3 | `skyhammer[tokenizers]`: model tokenizer from Hugging Face (`ModelEntry.hf_repo`) for Qwen, GPT-OSS, DeepSeek, Llama (with `HF_TOKEN`); Nova and failures fall back to the 4-chars estimate. Verified live 2026-10-29 (Qwen3: 22 real vs 24 est.) |
@@ -165,9 +165,9 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SI-17 | Drop-in OpenAI client (`skyhammer.openai_client()`) | ✅ | M2 | `skyhammer.openai_client()` (extra `skyhammer[openai]`) → `bedrock-runtime/openai/v1`; live 2026-10-29 |
 | SI-18 | Throttling handling + quota introspection | ✅ | M2 | `ThrottledError` with routing/tier/batch/quota guidance; `LLM.quotas()` + `skyhammer models quotas` (on-demand, geo, global TPM/RPM) |
 | SI-19 | `deployment_type="serverless"\|"dedicated"\|"auto"` | 🟡 | M3 | Dedicated deploy of fine-tuned weights verified live (SV-4). Base models from Hub prepacked artifacts: `CreateModel` verified live (after removing HubAccessConfig, which public-hub content rejects); the endpoint never came up because us-east-1 had no capacity on 2026-10-29 (ml.g6e.2xlarge, then ml.g5.2xlarge, 38 min each). Retry with SV-18 capacity fallback |
-| SI-20 | Multimodal inputs (images, documents, video) | 🟡 | M3 | Base64 image parts (`image_url` data URLs) map to Converse image blocks; documents/video in M3 |
+| SI-20 | Multimodal inputs (images, documents, video) | ✅ | M3 | `image_url`, `file` (PDF/DOCX/XLSX/CSV/TXT/MD/HTML) and `video_url` parts as data URLs; images and video also from `s3://`. Live 2026-10-30: image (Claude), document and video inline + S3 (Nova Lite) |
 | SI-21 | Prompt caching | ✅ | M3 | `cache_point` parts, Anthropic-style `cache_control`, `prompt_cache='system'`; cache tokens priced; live 2026-10-29: 3,269 cached tokens read at ~75% off. Note: caches are regional, so geo/global routing can miss — prefer `routing='region'` for cache-heavy work |
-| SI-22 | Guardrails on any call | 🟡 | M3 | `guardrail={id, version}` maps to Converse guardrailConfig; not yet live-tested |
+| SI-22 | Guardrails on any call | ✅ | M3 | `guardrail={id, version, trace}`; blocks → `finish_reason="content_filter"` with the guardrail's message. Live 2026-10-30 (deny topic): allow, block, stream, trace |
 | SI-23 | Completions (raw text) API | ✅ | M3 | `llm.completions.create(prompt=...)` (prompt sent as one user turn; chat models answer rather than continue) |
 | SI-24 | Responses API (stateful) | ⬜ | M5 | Supported for some models on `bedrock-runtime` |
 | SI-25 | Speech / audio models | ➖ | — | Nova Sonic is bidirectional streaming; revisit after M6 |
@@ -192,8 +192,8 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-14 | Quantization / speculative decoding | ⬜ | M6 | LMI options on SageMaker; not exposed by Bedrock CMI |
 | SV-18 | GPU capacity fallback | ⬜ | M4 | Seen live 2026-10-29: ml.g6e.2xlarge `InsufficientInstanceCapacity` in us-east-1 after 38 min. Add InstancePools (up to 5 types by priority) or a sequential fallback to the next instance that fits, plus a shorter `VariantInstanceProvisionTimeoutInSeconds` |
 | SV-15 | Embedding / rerank model fine-tuning | ➖ | — | CMI doesn't support embedding models; revisit |
-| SV-16 | Prompt caching | ⬜ | M3 | Tracked as SI-21 |
-| SV-17 | Bedrock Guardrails on fine-tuned models | ⬜ | M3 | Tracked as SI-22 |
+| SV-16 | Prompt caching | ✅ | M3 | Same feature as SI-21 |
+| SV-17 | Bedrock Guardrails on fine-tuned models | 🟡 | M3 | Imported models get the guardrail on InvokeModel (blocks read from `amazon-bedrock-guardrailAction`, recorded live on a base model); SageMaker endpoints raise. 🔴 live run on an imported model (with TR-18) |
 
 ### 2.7 Operations, cost and observability
 
@@ -206,7 +206,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | OP-5 | Serving metrics (latency, tokens, errors) | ✅ | M4 | `LLM.metrics(hours)` / `skyhammer metrics NAME`: CloudWatch invocations, avg/p50/p99 latency, tokens, client/server errors, throttles, for Bedrock (by invoked ID) and SageMaker inference components. Verified live 2026-10-29 |
 | OP-6 | Alerts / budgets | ⬜ | M5 | AWS Budgets + CloudWatch alarms from specs |
 | OP-7 | Audit log | ✅ (AWS) | M0 | CloudTrail, no work needed; document it |
-| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅; 🔴 live cross-region run |
+| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅; 🔴 live cross-region run. Today the only cross-region route is Qwen3-32B RFT on Bedrock (us-west-2); other cross-region training can't serve on demand, so the router keeps it in us-east-1 on SageMaker |
 
 ### 2.8 Security and enterprise
 
@@ -266,7 +266,7 @@ Verified live 2026-10-29: SV-4/5/6/13 SageMaker endpoints (deploy 8 min, scale t
 distillation, EV-6 managed eval jobs, EV-7, DA-6 tokenizer counts, DA-7, DA-8 lineage,
 PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: SI-19 base-model endpoints (blocked
 by GPU capacity → SV-18), TR-3 full-FT quality, TR-18 user weights live, EV-9 MLflow
-mirroring, SI-20/22 documents/video and guardrails live, OP-8 live cross-region.
+mirroring, SV-17 guardrails on an imported model, OP-8 live cross-region.
 
 ### M4: preference and RL training, production serving (in progress)
 Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python reward

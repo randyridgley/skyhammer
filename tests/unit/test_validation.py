@@ -186,3 +186,93 @@ def test_dataset_lineage_links_versions_to_models(monkeypatch: object) -> None:
     assert info["jobs"][0]["distilled_from"] == "us.anthropic.claude-haiku-4-5"
     with pytest.raises(SkyhammerError, match="No dataset named"):
         Dataset.lineage("missing", session=object())
+
+
+def test_repair_roles_renames_merges_and_drops_bad_turns() -> None:
+    messy = {
+        "messages": [
+            {"role": "gpt", "content": "Hi! How can I help?"},  # opens with the assistant
+            {"role": "Human", "content": "What is 2+2?"},
+            {"role": "human", "content": "Answer briefly."},  # consecutive user turns
+            {"role": "assistant", "content": ""},  # empty
+            {"role": "bot", "content": "4"},
+        ]
+    }
+    data = rows(chat(), chat(), messy)
+    report = validate(data, Technique.SFT, LIMITS)
+    [issue] = report.errors
+    assert issue.fix is Fix.REPAIR_ROLES
+    assert report.fixable
+    fixed = apply_fixes(data, report)
+    assert fixed[2]["messages"] == [
+        {"role": "user", "content": "What is 2+2?\n\nAnswer briefly."},
+        {"role": "assistant", "content": "4"},
+    ]
+    assert messy["messages"][0]["role"] == "gpt"  # the source row is not mutated
+
+
+def test_repair_merges_content_part_lists() -> None:
+    parts = {
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "a"}]},
+            {"role": "user", "content": "b"},
+            {"role": "assistant", "content": "c"},
+        ]
+    }
+    data = rows(chat(), chat(), parts)
+    fixed = apply_fixes(data, validate(data, Technique.SFT, LIMITS))
+    assert fixed[2]["messages"][0]["content"] == [
+        {"type": "text", "text": "a"},
+        {"type": "text", "text": "b"},
+    ]
+
+
+def test_unrepairable_rows_are_still_dropped() -> None:
+    data = rows(chat(), chat(), {"messages": [{"role": "user", "content": "q"}]})
+    report = validate(data, Technique.SFT, LIMITS)
+    assert report.errors[0].fix is Fix.DROP_ROW
+
+
+def test_truncate_drops_oldest_exchanges_and_keeps_system() -> None:
+    long = {
+        "messages": [
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "x" * 120},
+            {"role": "assistant", "content": "y" * 120},
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "a"},
+        ]
+    }
+    data = rows(chat(), chat(), long)
+    report = validate(data, Technique.SFT, LIMITS)
+    [issue] = report.errors
+    assert issue.fix is Fix.TRUNCATE
+    assert "drop 2 oldest messages" in issue.message
+    fixed = apply_fixes(data, report)
+    assert [m["content"] for m in fixed[2]["messages"]] == ["s", "q", "a"]
+    assert report.max_sample_tokens <= LIMITS.max_tokens_per_sample
+
+
+def test_single_exchange_over_limit_is_dropped() -> None:
+    report = validate(rows(chat(), chat(), chat("x" * 1000)), Technique.SFT, LIMITS)
+    assert report.errors[0].fix is Fix.DROP_ROW
+
+
+def test_repair_then_truncate_uses_final_row() -> None:
+    row = {
+        "messages": [
+            {"role": "human", "content": "x" * 120},
+            {"role": "gpt", "content": "y" * 120},
+            {"role": "human", "content": "q"},
+            {"role": "gpt", "content": "a"},
+        ]
+    }
+    data = rows(chat(), chat(), row)
+    report = validate(data, Technique.SFT, LIMITS)
+    assert [i.fix for i in report.errors] == [Fix.REPAIR_ROLES, Fix.TRUNCATE]
+    fixed = apply_fixes(data, report)
+    assert fixed[2]["messages"] == [
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "a"},
+    ]
+    assert len(report.applied_fixes) == 2
