@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 import pytest
+from botocore.exceptions import ClientError
 
 from skyhammer.backends.mantle import BedrockMantleBackend
 from skyhammer.backends.sagemaker import SageMakerServerlessBackend
@@ -84,6 +85,8 @@ class FakeS3:
         return P()
 
     def get_object(self, Bucket: str, Key: str) -> dict[str, Any]:
+        if Key == f"{self.prefix}metrics.jsonl":  # evaluation metrics not written yet
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         assert Key == f"{self.prefix}train_metrics.jsonl"
         lines = [
             {

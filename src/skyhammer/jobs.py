@@ -288,6 +288,49 @@ class FineTuningJob:
     def cancel(self) -> None:
         self._backend.cancel(self.handle)
 
+    def _progress_line(self, st: JobStatus) -> str:
+        from skyhammer.progress import loss_series, sparkline
+
+        line = f"{st.state.value}" + (f" ({st.message})" if st.message else "")
+        if st.state in (
+            JobState.TRAINING,
+            JobState.MERGING,
+            JobState.IMPORTING,
+            JobState.COMPLETED,
+        ):
+            try:
+                losses = loss_series(self.metrics())
+            except Exception:  # metrics are best-effort; never break a wait
+                losses = []
+            if losses:
+                line += f"  loss {losses[-1]:.4f} {sparkline(losses)}"
+        return line
+
+    def _repr_html_(self) -> str:
+        """Notebook view: status, route, estimate and the loss curve."""
+        from skyhammer.progress import html_table, loss_series, svg_sparkline
+
+        st = self.status()
+        losses = loss_series(self.metrics())
+        rows = [
+            ("job", self.name),
+            ("model", f"{self.record.output_model} (from {self.record.base_model})"),
+            ("backend", f"{self.record.backend} in {self.record.region}"),
+            ("state", st.state.value + (f": {st.message}" if st.message else "")),
+        ]
+        if self.record.estimate:
+            rows.append(("estimate", self.record.estimate))
+        if losses:
+            rows.append(("loss", f"{losses[-1]:.4f} after {len(losses)} steps"))
+            rows.append(("curve", svg_sparkline(losses)))
+        return html_table(rows, raw={"curve"})
+
+    def metrics(self) -> builtins.list[dict[str, float]]:
+        """Per-step training (and validation) metrics so far, oldest first, each with a
+        ``step``: loss, learning rate, gradient norm... whatever the backend reports."""
+        read = getattr(self._backend, "metrics", None)
+        return read(self.record) if read else []
+
     def checkpoints(self) -> builtins.list[Checkpoint]:
         """Intermediate checkpoints with their metrics, oldest first (empty where the
         backend keeps none: Bedrock model customization)."""
@@ -300,13 +343,23 @@ class FineTuningJob:
         poll_seconds: float = 60,
         timeout_seconds: float | None = None,
         on_status: Any = None,
+        progress: bool = False,
     ) -> FineTuningJob:
-        """Block until the job is terminal. Raises ``JobFailedError`` on failure."""
+        """Block until the job is terminal. Raises ``JobFailedError`` on failure.
+
+        ``progress=True`` prints a line whenever the stage or the training loss changes,
+        with the loss curve so far as a sparkline."""
         deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
+        start, last = time.monotonic(), ""
         while True:
             st = self.status()
             if on_status:
                 on_status(st)
+            if progress:
+                line = self._progress_line(st)
+                if line != last:
+                    print(f"{(time.monotonic() - start) / 60:5.1f} min  {line}", flush=True)
+                    last = line
             if st.state is JobState.COMPLETED:
                 return self
             if st.state.terminal:

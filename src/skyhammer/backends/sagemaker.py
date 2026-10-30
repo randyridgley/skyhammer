@@ -580,18 +580,34 @@ class SageMakerServerlessBackend:
             for p in page.get("CommonPrefixes", []):
                 folder = p["Prefix"].rstrip("/").rsplit("/", 1)[-1]
                 steps[int(folder.removeprefix("step_"))] = f"s3://{res.bucket}/{p['Prefix']}"
-        metrics: dict[int, dict[str, float]] = {}
-        try:
-            body = s3.get_object(Bucket=res.bucket, Key=prefix + "train_metrics.jsonl")["Body"]
-            for line in body.read().decode().splitlines():
-                row = json.loads(line)
-                step = int(float(row.pop("train/global_step", 0)))
-                metrics[step] = {k.removeprefix("train/"): float(v) for k, v in row.items()}
-        except ClientError:
-            pass  # metrics are optional
+        metrics = {int(row.pop("step")): row for row in self.metrics(record)}
         return [
             Checkpoint(step, metrics.get(step, {}), uri=uri) for step, uri in sorted(steps.items())
         ]
+
+    def metrics(self, record: JobRecord) -> list[dict[str, float]]:
+        """Per-step training metrics (``train_metrics.jsonl``) merged with evaluation metrics
+        (``metrics.jsonl``, ``eval_`` keys), keyed by ``step``. Empty until written."""
+        res = self.session.resources_for(self.region)
+        s3 = self.session.client("s3", region=self.region)
+        prefix = f"jobs/{record.job_name}/output/{record.job_name}/output/model/"
+        rows: dict[int, dict[str, float]] = {}
+        for name, kind in (("train_metrics.jsonl", "train/"), ("metrics.jsonl", "eval/")):
+            try:
+                body = s3.get_object(Bucket=res.bucket, Key=prefix + name)["Body"].read()
+            except ClientError:
+                continue  # not written yet
+            for line in body.decode().splitlines():
+                data = json.loads(line)
+                step_key = f"{kind}global_step"
+                if step_key not in data:
+                    continue
+                step = int(float(data.pop(step_key)))
+                row = rows.setdefault(step, {"step": float(step)})
+                for k, v in data.items():
+                    if k.startswith(kind):
+                        row[k.removeprefix(kind)] = float(v)
+        return [rows[s] for s in sorted(rows)]
 
     def _find_import(self, job_name: str) -> dict[str, Any] | None:
         name = import_job_name(job_name)

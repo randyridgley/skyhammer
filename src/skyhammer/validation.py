@@ -79,6 +79,28 @@ class ValidationReport:
         """True if every error has a fix and applying them leaves a valid dataset."""
         return all(i.fix is not None for i in self.errors)
 
+    def _repr_html_(self) -> str:
+        import html
+
+        approx = "" if self.exact_tokens else "~"
+        head = (
+            f"<p>{self.total_rows} rows, {approx}{self.estimated_tokens:,} tokens: "
+            f"<b>{len(self.errors)} errors</b>, {len(self.warnings)} warnings"
+            f"{'' if self.ok else (' (auto-fixable)' if self.fixable else '')}</p>"
+        )
+        rows = "".join(
+            f"<tr><td>{i.line or 'dataset'}</td><td>{i.severity.value}</td>"
+            f"<td>{html.escape(i.message)}</td><td>{i.fix.value if i.fix else ''}</td></tr>"
+            for i in self.issues[:50]
+        )
+        table = (
+            "<table><tr><th>line</th><th>severity</th><th>problem</th><th>fix</th></tr>"
+            f"{rows}</table>"
+            if rows
+            else ""
+        )
+        return head + table
+
     def summary(self, limit: int = 10) -> str:
         lines = [
             f"{self.total_rows} rows, {'' if self.exact_tokens else '~'}"

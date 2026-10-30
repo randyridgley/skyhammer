@@ -55,7 +55,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DX-9 | Tool calling / function calling passthrough | ✅ | M2 | Shipped as SI-7 |
 | DX-10 | Structured outputs (JSON schema) | ✅ | M2 | Shipped as SI-8 |
 | DX-11 | Reasoning controls (Qwen3 `<think>`, effort) | ✅ | M2 | Shipped as SI-9 (Qwen3 `<think>` split into reasoning_content) |
-| DX-12 | Rich progress / notebook reprs | ⬜ | M4 | Loss curves from `job.logs()`; HTML repr |
+| DX-12 | Rich progress / notebook reprs | ✅ | M4 | `job.metrics()` (per-step loss etc. from Bedrock CSVs, SageMaker metrics JSONL, bedrock-mantle events); `job.wait(progress=True)` and `skyhammer jobs wait` print stage changes and the loss sparkline; `skyhammer jobs metrics`; notebook views for jobs (loss curve SVG), validation reports and cost estimates. Live 2026-10-30: Nova Micro job loss 3.96 → 0.54 `█▅▃▂▁▁` (recorded as a fixture) |
 | DX-13 | Docs site + cookbook examples | ✅ | M4 | Material for MkDocs generated from docstrings + `examples/` (a guide page per example: SFT, DPO, RL, distill, eval, BYO weights); published to GitHub Pages on every push to `main` |
 | DX-14 | LangChain / LlamaIndex / LiteLLM adapters | ⬜ | M5 | Thin wrappers over `LLM.chat` |
 
@@ -273,7 +273,7 @@ Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python rewa
 judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
 RFT (built, live run pending), TR-11 RLAIF, TR-15/16 (checkpoint resume; Bedrock continued
 tuning live), SE-5 live VPC run,
-DX-12 progress/notebook reprs, PK-5 nightly.
+PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
 SV-10 provisioned throughput, SV-11 traffic splitting, SV-12 environments/aliases,

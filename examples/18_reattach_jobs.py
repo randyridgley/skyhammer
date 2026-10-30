@@ -7,7 +7,7 @@ package the earlier job registered. It's a new job and a new model; the old one 
 
 Cost: free (reads job state) until the commented continued-training lines, which bill like
 any fine-tuning job. Run after 16/17: uv run python examples/18_reattach_jobs.py
-CLI: skyhammer jobs list | jobs get NAME | jobs wait NAME | jobs logs NAME
+CLI: skyhammer jobs list | jobs get NAME | jobs wait NAME | jobs logs NAME | jobs metrics NAME
 """
 
 from skyhammer import LLM, FineTuningJob
@@ -17,6 +17,10 @@ for job in FineTuningJob.list():  # latest job for each of your fine-tuned model
 
 job = FineTuningJob.get("support-nova")  # by model name (latest job) or exact job name
 print(job.status())
+job.wait(progress=True)  # prints each stage and the loss as it trains: "loss 0.54 █▅▃▂▁▁"
+for row in job.metrics()[-3:]:  # per-step loss, learning rate... from any backend
+    print(" ", row)
+# In a notebook, `job` on its own renders status, estimate and the loss curve.
 for line in job.logs(limit=10):  # Bedrock step metrics or SageMaker training progress
     print(" ", line)
 

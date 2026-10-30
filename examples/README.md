@@ -40,7 +40,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [15_plan_and_cost_guardrails.py](15_plan_and_cost_guardrails.py) | Routing, live price estimates, `max_cost_usd`, RL time caps, tags, KMS, residency, VPC, least-privilege IAM, EULAs, CloudTrail audit | TR-5, TR-13, OP-1, OP-2, OP-3, OP-7, SE-1, SE-2, SE-4, SE-5, SE-8 |
 | [16_fine_tune_nova.py](16_fine_tune_nova.py) | Nova SFT on Bedrock → serverless deploy → chat → delete | TR-1, SV-2, DX-2 |
 | [17_fine_tune_open_weight.py](17_fine_tune_open_weight.py) | Open-weight SFT on SageMaker → auto-import to Bedrock; hyperparameter checks; cold starts | TR-2, TR-3, TR-4, SV-3, SE-8 |
-| [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, TR-19, TR-15, TR-16 |
+| [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, progress and loss curves, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, DX-12, TR-19, TR-15, TR-16 |
 | [20_distillation.py](20_distillation.py) | Teacher → student distillation from prompts only | TR-6 |
 | [26_dpo.py](26_dpo.py) | Preference tuning (DPO) from preferred vs non-preferred answers | TR-8, DA-9 |
 | [28_rl_with_rewards.py](28_rl_with_rewards.py) | RL with a Python reward function or an LLM judge (auto-deployed Lambda), runtime-capped | TR-10, TR-11, TR-13, EV-4 |
@@ -73,7 +73,7 @@ skyhammer rerank rerank-v3-5 "query" "doc one" "doc two"
 skyhammer datasets validate examples/data/train.jsonl --model qwen3-8b
 skyhammer datasets list | datasets get NAME            # versions and lineage
 skyhammer apply examples/support-apply.yaml --plan    # then without --plan
-skyhammer jobs list | jobs get NAME | jobs logs NAME | jobs wait NAME
+skyhammer jobs list | jobs get NAME | jobs logs NAME | jobs wait NAME | jobs metrics NAME
 skyhammer batch submit nova-micro requests.jsonl && skyhammer batch results JOB -o out.jsonl
 skyhammer eval compare nova-micro qwen3-32b --dataset examples/data/eval.jsonl
 skyhammer eval judge nova-micro --dataset examples/data/eval.jsonl --judge nova-pro

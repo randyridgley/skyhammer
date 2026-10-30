@@ -177,6 +177,18 @@ class BedrockMantleBackend:
     def cancel(self, handle: JobHandle) -> None:
         self.client.request("POST", f"/v1/fine_tuning/jobs/{handle.job_id}/cancel")
 
+    def metrics(self, record: JobRecord) -> list[dict[str, float]]:
+        """Numeric metrics from job events that carry a ``step``, oldest first."""
+        events = self.client.request(
+            "GET", f"/v1/fine_tuning/jobs/{record.job_id}/events?limit=100"
+        ).get("data", [])
+        rows = []
+        for e in reversed(events):
+            data = e.get("data") or {}
+            if isinstance(data, dict) and "step" in data:
+                rows.append({k: float(v) for k, v in data.items() if isinstance(v, int | float)})
+        return rows
+
     def checkpoints(self, record: JobRecord) -> list[Checkpoint]:
         """Each checkpoint is a model ID you can call on demand, like the final model."""
         data = self.client.request(

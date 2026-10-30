@@ -39,6 +39,11 @@ class CostEstimate:
             return None
         return self.training_tokens / 1000 * self.usd_per_1k_tokens
 
+    def _repr_html_(self) -> str:
+        from skyhammer.progress import html_table
+
+        return html_table([("estimate", str(self)), *(("note", n) for n in self.notes)])
+
     def __str__(self) -> str:
         if self.usd_per_hour is not None and self.usd is not None:
             return (

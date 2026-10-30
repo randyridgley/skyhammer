@@ -260,7 +260,7 @@ def test_apply_trains_deploys_and_evaluates(
 
         def wait(self, **kw: Any) -> None:
             calls.append("wait")
-            kw["on_status"](JobStatus(JobState.COMPLETED))
+            assert kw.get("progress") is True  # the CLI shows stage changes and the loss
 
     monkeypatch.setattr(
         LLM, "create_job", lambda self, *a, **k: calls.append("create") or FakeJob()

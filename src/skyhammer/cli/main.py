@@ -28,7 +28,7 @@ from skyhammer.dataset import Dataset
 from skyhammer.errors import BootstrapMissingError, SkyhammerError
 from skyhammer.evaluation import evaluate
 from skyhammer.graders import Grader, GraderKind
-from skyhammer.jobs import FineTuningJob, JobStatus
+from skyhammer.jobs import FineTuningJob
 from skyhammer.llm import LLM
 from skyhammer.router import resolve
 from skyhammer.serverless import ModelDirectory, Routing
@@ -272,20 +272,9 @@ def _eval_graders(spec: JobSpec) -> list[Grader]:
 
 
 def _wait(job: FineTuningJob, poll_seconds: float = 60) -> None:
-    """Block until done, printing each state change (the job may outlive this process;
-    re-running the command reattaches)."""
-    last: tuple[str, str | None] | None = None
-
-    def show(st: JobStatus) -> None:
-        nonlocal last
-        if (st.state.value, st.message) != last:
-            last = (st.state.value, st.message)
-            console.print(
-                f"  {time.strftime('%H:%M:%S')} {st.state.value}"
-                + (f": {st.message}" if st.message else "")
-            )
-
-    job.wait(poll_seconds=poll_seconds, on_status=show)
+    """Block until done, printing each stage change and the loss as it trains (the job may
+    outlive this process; re-running the command reattaches)."""
+    job.wait(poll_seconds=poll_seconds, progress=True)
 
 
 @app.command()
@@ -432,6 +421,25 @@ def jobs_logs(name: str, limit: Annotated[int, typer.Option(help="Lines to show"
     """Training progress (SageMaker log stream or Bedrock step metrics)."""
     for line in FineTuningJob.get(name).logs(limit):
         console.print(line, highlight=False, markup=False)
+
+
+@jobs_app.command("metrics")
+def jobs_metrics(name: str, last: Annotated[int, typer.Option(help="Rows to show")] = 20) -> None:
+    """Per-step training metrics (loss, learning rate...) and the loss curve."""
+    from skyhammer.progress import loss_series, sparkline
+
+    rows = FineTuningJob.get(name).metrics()
+    if not rows:
+        console.print("No metrics yet.")
+        return
+    keys = list(dict.fromkeys(k for r in rows for k in r if k != "step"))
+    table = Table("step", *keys)
+    for r in rows[-last:]:
+        table.add_row(f"{r['step']:g}", *(f"{r[k]:.4g}" if k in r else "" for k in keys))
+    console.print(table)
+    losses = loss_series(rows)
+    if losses:
+        console.print(f"loss {losses[0]:.4f} -> {losses[-1]:.4f}  {sparkline(losses)}")
 
 
 @jobs_app.command("cancel")

@@ -231,6 +231,27 @@ class BedrockNativeBackend:
     def cancel(self, handle: JobHandle) -> None:
         self.bedrock.stop_model_customization_job(jobIdentifier=handle.job_id)
 
+    def metrics(self, record: JobRecord) -> list[dict[str, float]]:
+        """Per-step metrics from the ``*_metrics.csv`` files Bedrock writes to the output
+        (training and validation loss), keyed by ``step``. Empty until written."""
+        res = self.session.resources_for(self.region)
+        s3 = self.session.client("s3", region=self.region)
+        rows: dict[int, dict[str, float]] = {}
+        for page in s3.get_paginator("list_objects_v2").paginate(
+            Bucket=res.bucket, Prefix=f"jobs/{record.job_name}/output/"
+        ):
+            for obj in page.get("Contents", []):
+                if not obj["Key"].endswith("_metrics.csv"):
+                    continue
+                body = s3.get_object(Bucket=res.bucket, Key=obj["Key"])["Body"].read().decode()
+                for row in csv.DictReader(io.StringIO(body)):
+                    if not _is_float(row.get("step_number", "")):
+                        continue
+                    step = int(float(row.pop("step_number")))
+                    merged = rows.setdefault(step, {"step": float(step)})
+                    merged.update({k: float(v) for k, v in row.items() if _is_float(v)})
+        return [rows[s] for s in sorted(rows)]
+
     def finalize(self, record: JobRecord) -> ModelRef:
         st = self.describe(record.handle)
         if st.state is not JobState.COMPLETED or not st.output_model_arn:
