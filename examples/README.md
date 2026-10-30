@@ -29,6 +29,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [10_prompt_caching.py](10_prompt_caching.py) | Cache a long prompt prefix | SI-21, SV-16 |
 | [11_multimodal_and_completions.py](11_multimodal_and_completions.py) | Images, documents, video (inline or S3), and the completions API | SI-20, SI-23 |
 | [29_guardrails.py](29_guardrails.py) | Block topics or content on any call, including fine-tuned models and endpoints; `content_filter` and traces | SI-22, SV-17 |
+| [32_responses_api.py](32_responses_api.py) | OpenAI Responses API on any model: `previous_response_id` turns, function tools, streaming events; native on bedrock-runtime/mantle, emulated elsewhere | SI-24 |
 | [12_api_keys_and_openai_client.py](12_api_keys_and_openai_client.py) | Bedrock API keys; the OpenAI SDK against Bedrock | SI-16, SI-17 |
 | [13_model_discovery_and_quotas.py](13_model_discovery_and_quotas.py) | List models and routes, quotas, throttling errors | SI-4, SI-18 |
 

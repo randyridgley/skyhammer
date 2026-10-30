@@ -1,0 +1,65 @@
+{
+ "background": false,
+ "created_at": 1793393919.0,
+ "error": null,
+ "id": "resp_c6ntzmp6245s3hggcltwchkqxwgbzh4wfr4ipdodnxadyjqkwylq",
+ "incomplete_details": null,
+ "instructions": null,
+ "max_output_tokens": 200,
+ "metadata": {},
+ "model": "openai.gpt-oss-20b",
+ "object": "response",
+ "output": [
+  {
+   "content": [
+    {
+     "text": "User asked: \"What number did I ask you to remember? Just the number.\" The prior instruction: \"Remember the number 42. Reply with just OK.\" So we should answer: \"42\".",
+     "type": "reasoning_text"
+    }
+   ],
+   "id": "msg_bcc977b0963eb28c",
+   "status": "completed",
+   "summary": [],
+   "type": "reasoning"
+  },
+  {
+   "content": [
+    {
+     "annotations": [],
+     "text": "42",
+     "type": "output_text"
+    }
+   ],
+   "id": "msg_8930c02c20ead447",
+   "role": "assistant",
+   "status": "completed",
+   "type": "message"
+  }
+ ],
+ "parallel_tool_calls": true,
+ "previous_response_id": "resp_2cne44yz3wgm4uy23ojhbfk7qfjir7iwqmfwpiipqfpgxt6rrntq",
+ "service_tier": "default",
+ "status": "completed",
+ "temperature": 1.0,
+ "text": {
+  "format": {
+   "type": "text"
+  },
+  "verbosity": "medium"
+ },
+ "tool_choice": "auto",
+ "tools": [],
+ "top_p": 1.0,
+ "truncation": "disabled",
+ "usage": {
+  "input_tokens": 102,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 52,
+  "output_tokens_details": {
+   "reasoning_tokens": 42
+  },
+  "total_tokens": 154
+ }
+}

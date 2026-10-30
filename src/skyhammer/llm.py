@@ -41,6 +41,7 @@ from skyhammer.jobs import (
 )
 from skyhammer.metrics import ServingMetrics
 from skyhammer.pricing import InferencePrices
+from skyhammer.responses import Responses
 from skyhammer.router import resolve
 from skyhammer.serverless import ModelDirectory, Routing, ServerlessModel
 from skyhammer.serving import EndpointDeployer, EndpointNames, Scaling
@@ -865,6 +866,11 @@ class LLM:
             EndpointNames.for_deployment(self.deployment.name), copies
         )
         return self
+
+    @property
+    def responses(self) -> Responses:
+        """The OpenAI Responses API: native where Bedrock serves it, emulated elsewhere."""
+        return Responses(self)
 
     @property
     def chat(self) -> Chat:

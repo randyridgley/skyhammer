@@ -169,7 +169,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SI-21 | Prompt caching | ✅ | M3 | `cache_point` parts, Anthropic-style `cache_control`, `prompt_cache='system'`; cache tokens priced; live 2026-10-29: 3,269 cached tokens read at ~75% off. Note: caches are regional, so geo/global routing can miss — prefer `routing='region'` for cache-heavy work |
 | SI-22 | Guardrails on any call | ✅ | M3 | `guardrail={id, version, trace}`; blocks → `finish_reason="content_filter"` with the guardrail's message. Live 2026-10-30 (deny topic): allow, block, stream, trace |
 | SI-23 | Completions (raw text) API | ✅ | M3 | `llm.completions.create(prompt=...)` (prompt sent as one user turn; chat models answer rather than continue) |
-| SI-24 | Responses API (stateful) | ⬜ | M5 | Supported for some models on `bedrock-runtime` |
+| SI-24 | Responses API (stateful) | ✅ | M5 | `llm.responses.create/retrieve/delete/cancel`. Native pass-through where Bedrock serves it (GPT-5.6 on `bedrock-runtime` `/openai/v1/responses`, GPT-OSS on `bedrock-mantle` `/v1/responses`; Bedrock stores turns 30 days, `store=False` keeps none); emulated over chat for every other model, with `previous_response_id` state in process memory. Route probed on first call (live errors: runtime 404 `model_not_found`, mantle 400 "does not support") and cached. Guardrails via runtime headers. Live 2026-10-30: Nova Micro, GPT-5.6 Luna, GPT-OSS-20B (multi-turn, tools, streaming, retrieve/delete); fixtures recorded |
 | SI-25 | Speech / audio models | ➖ | — | Nova Sonic is bidirectional streaming; revisit after M6 |
 
 ### 2.6 Serving and inference (fine-tuned and dedicated)
@@ -275,8 +275,8 @@ RFT (built, live run pending), TR-11 RLAIF, TR-15 (checkpoint resume), SE-5 live
 PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
-Done: SV-11 traffic splitting, SV-12 environments (2026-10-30). Remaining: SV-10
-provisioned throughput, DX-8 async, DX-14 framework adapters, SI-24 Responses API, TR-14 CPT, DA-11
+Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30). Remaining: SV-10
+provisioned throughput, DX-8 async, DX-14 framework adapters, TR-14 CPT, DA-11
 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
 PK-7 **PyPI 1.0**.
 

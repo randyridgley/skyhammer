@@ -49,7 +49,14 @@ def user_policy(
                 bedrock("custom-model-deployment/*"),
                 bedrock("imported-model/*"),
                 bedrock("guardrail/*"),
+                bedrock("project/*"),  # Responses API: authorized on the default project too
             ],
+        },
+        {
+            "Sid": "StoredResponses",  # Responses API: retrieve, cancel and delete
+            "Effect": "Allow",
+            "Action": ["bedrock:GetInvoke", "bedrock:CancelInvoke", "bedrock:DeleteInvoke"],
+            "Resource": bedrock("project/*"),
         },
         {
             "Sid": "CustomizeServeEvaluate",
