@@ -11,10 +11,20 @@ runs in your own AWS account.
 Amazon Web Services. Amazon Bedrock, Amazon SageMaker and Amazon Nova are trademarks of
 Amazon.com, Inc. or its affiliates.*
 
-> Status: **M2**. Serverless calls to every Bedrock model (streaming, tools, JSON schema,
-> reasoning, service tiers, per-call cost, embeddings, rerank) and SFT on Nova and
-> open-weight models work end-to-end against AWS. See [ROADMAP.md](ROADMAP.md) for the
-> capability matrix and [DESIGN.md](DESIGN.md) for architecture.
+> Status: **M4** (0.x, pre-1.0). Serverless calls to every Bedrock model; SFT, DPO, RL
+> (Python or LLM-judge rewards), distillation and full fine-tuning; serving on Bedrock or
+> SageMaker (scale to zero, GPU capacity fallback, multi-LoRA); evaluation, guardrails and
+> least-privilege IAM, verified against AWS. See [ROADMAP.md](ROADMAP.md) for the
+> capability matrix, [DESIGN.md](DESIGN.md) for architecture and
+> [CHANGELOG.md](CHANGELOG.md) for releases.
+
+## Install
+
+```bash
+pip install skyhammer                 # or: uv add skyhammer
+pip install "skyhammer[tokenizers]"   # exact token counts for open-weight models
+skyhammer bootstrap                   # one-time: bucket, KMS key, service roles
+```
 
 ## Call any Bedrock model
 

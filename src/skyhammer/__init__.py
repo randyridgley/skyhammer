@@ -20,7 +20,7 @@ from skyhammer.graders import Grader, grader, reference_answer
 from skyhammer.jobs import FineTuningJob, JobState
 from skyhammer.llm import LLM
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = [
     "CATALOG",

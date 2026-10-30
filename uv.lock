@@ -3311,7 +3311,6 @@ wheels = [
 
 [[package]]
 name = "skyhammer"
-version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
@@ -3363,7 +3362,7 @@ requires-dist = [
     { name = "tokenizers", marker = "extra == 'tokenizers'", specifier = ">=0.20" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["tokenizers", "openai", "hf", "pandas"]
+provides-extras = ["hf", "openai", "pandas", "tokenizers"]
 
 [package.metadata.requires-dev]
 dev = [

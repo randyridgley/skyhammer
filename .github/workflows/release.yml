@@ -1,0 +1,49 @@
+name: release
+
+# Push a tag like v0.1.0 to publish that version to PyPI. Publishing uses PyPI trusted
+# publishing (OIDC): no API token is stored here. One-time setup on pypi.org: add a
+# (pending) trusted publisher for project "skyhammer", repository randyridgley/skyhammer,
+# workflow release.yml, environment "pypi".
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Tag matches the package version
+        run: |
+          version=$(uv run --no-project python -c "import re; print(re.search(r'__version__ = \"(.+?)\"', open('src/skyhammer/__init__.py').read()).group(1))")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != v$version"; exit 1; }
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "CHANGELOG.md has no $version entry"; exit 1; }
+      - run: uv sync --locked
+      - name: Checks
+        run: uv run ruff check . && uv run mypy src && uv run pytest -q
+      - run: uv build
+      - name: Validate the distributions
+        run: uvx twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
