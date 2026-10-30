@@ -216,7 +216,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SE-2 | Data stays in customer account | ✅ | M0 | Default architecture |
 | SE-3 | Data residency / region pinning | ✅ | M0 | `allowed_regions`, `cross_region: false` |
 | SE-4 | Least-privilege IAM | 🟡 | M4 | Tighten Bedrock role `InvokeModel *`; scoped user policy |
-| SE-5 | VPC-only training & import (no egress) | ⬜ | M4 | `VpcConfig` on training jobs, `vpcConfig` on import |
+| SE-5 | VPC-only training & import (no egress) | 🟡 | M4 | Settings `vpc: {region: {subnet_ids, security_group_ids}}` applies to SageMaker training jobs and endpoint models, Bedrock customization and import jobs (schema-validated); bootstrap job roles can manage the network interfaces (applied in both regions 2026-10-30). Subnets need an S3 gateway endpoint. 🔴 live run in a private VPC pending |
 | SE-6 | Cross-account (data/training/serving accounts) | ⬜ | M5 | Assume-role per stage; bucket policies |
 | SE-7 | SSO / RBAC | ➖ | — | Provided by AWS IAM Identity Center; document patterns |
 | SE-8 | License gating (EULA) | ✅ | M1 | From Hub `ModelAccess`; `accept_eula=True` |

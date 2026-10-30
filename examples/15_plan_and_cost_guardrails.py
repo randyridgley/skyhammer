@@ -15,6 +15,8 @@ skyhammer.configure(
     tags={"cost-center": "1234", "project": "support-bot"},  # on every AWS resource
     # kms_key_arn="arn:aws:kms:...",       # bring your own key instead of the bootstrap key
     # allowed_regions=["us-east-1"],       # data residency
+    # vpc={"us-east-1": {"subnet_ids": ["subnet-a"], "security_group_ids": ["sg-1"]}},
+    #                                      # train, import and serve inside your VPC
 )
 ds = Dataset.from_file(Path(__file__).parent / "data" / "train.jsonl")
 

@@ -327,7 +327,18 @@ class SageMakerServerlessBackend:
         if res.kms_key_arn:
             output["KmsKeyId"] = res.kms_key_arn
 
+        vpc = self.session.settings.vpc_for(self.region)
         return {
+            **(
+                {
+                    "VpcConfig": {
+                        "SecurityGroupIds": vpc.security_group_ids,
+                        "Subnets": vpc.subnet_ids,
+                    }
+                }
+                if vpc
+                else {}
+            ),
             "TrainingJobName": request.job_name,
             "RoleArn": res.sagemaker_role_arn,
             "ServerlessJobConfig": serverless,

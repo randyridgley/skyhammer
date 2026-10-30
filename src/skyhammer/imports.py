@@ -122,6 +122,12 @@ def import_to_bedrock(
         }
         if res.kms_key_arn:
             kwargs["importedModelKmsKeyId"] = res.kms_key_arn
+        vpc = session.settings.vpc_for(region)
+        if vpc:
+            kwargs["vpcConfig"] = {
+                "subnetIds": vpc.subnet_ids,
+                "securityGroupIds": vpc.security_group_ids,
+            }
         while True:
             try:
                 job_arn = bedrock.create_model_import_job(**kwargs)["jobArn"]

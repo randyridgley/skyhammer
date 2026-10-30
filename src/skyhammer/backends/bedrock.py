@@ -158,6 +158,12 @@ class BedrockNativeBackend:
             )
         if validation_uri:
             kwargs["validationDataConfig"] = {"validators": [{"s3Uri": validation_uri}]}
+        vpc = self.session.settings.vpc_for(self.region)
+        if vpc:
+            kwargs["vpcConfig"] = {
+                "subnetIds": vpc.subnet_ids,
+                "securityGroupIds": vpc.security_group_ids,
+            }
         if res.kms_key_arn:
             kwargs["customModelKmsKeyId"] = res.kms_key_arn
         return kwargs

@@ -25,6 +25,16 @@ class Guardrails(BaseModel):
     confirm: bool = True
 
 
+class Vpc(BaseModel):
+    """Private subnets and security groups that training, import and endpoints run in.
+
+    The subnets need a route to S3 (a gateway endpoint) and to the AWS service APIs the
+    job uses (interface endpoints or NAT); without them jobs fail to read data."""
+
+    subnet_ids: list[str] = Field(min_length=1)
+    security_group_ids: list[str] = Field(min_length=1)
+
+
 class Settings(BaseModel):
     profile: str | None = None
     region: str = "us-east-1"
@@ -53,6 +63,12 @@ class Settings(BaseModel):
     # metrics there natively (experiment = output model name, run = job name).
     mlflow_arn: str | None = None
     guardrails: Guardrails = Field(default_factory=Guardrails)
+    # VPC-only training, import and serving, per region (subnets are regional), e.g.
+    #   vpc: {us-east-1: {subnet_ids: [subnet-a, subnet-b], security_group_ids: [sg-1]}}
+    vpc: dict[str, Vpc] = Field(default_factory=dict)
+
+    def vpc_for(self, region: str) -> Vpc | None:
+        return self.vpc.get(region)
 
 
 _ENV_KEYS = ("profile", "region", "bucket", "kms_key_arn", "bootstrap_stack")

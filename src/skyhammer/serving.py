@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from skyhammer.errors import JobFailedError, SkyhammerError
 
 if TYPE_CHECKING:
+    from skyhammer.config import Vpc
     from skyhammer.hub import HostingConfig
     from skyhammer.session import Session
 
@@ -402,6 +403,7 @@ def model_request(
     hub_content_arn: str | None = None,
     accept_eula: bool = False,
     network_isolation: bool = False,
+    vpc: Vpc | None = None,
 ) -> dict[str, Any]:
     source: dict[str, Any] = {
         "S3Uri": model_dir.rstrip("/") + "/",
@@ -424,6 +426,8 @@ def model_request(
     }
     if network_isolation:
         req["EnableNetworkIsolation"] = True
+    if vpc:
+        req["VpcConfig"] = {"SecurityGroupIds": vpc.security_group_ids, "Subnets": vpc.subnet_ids}
     return req
 
 
@@ -498,6 +502,7 @@ class EndpointDeployer:
                     hub_content_arn=hub_content_arn,
                     accept_eula=accept_eula,
                     network_isolation=network_isolation,
+                    vpc=self.session.settings.vpc_for(self.region),
                 )
             )
         if not self._exists(

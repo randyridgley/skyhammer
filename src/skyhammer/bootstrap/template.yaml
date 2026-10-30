@@ -103,6 +103,23 @@ Resources:
           - Effect: Allow
             Action: [kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey, kms:CreateGrant]
             Resource: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]
+          # VPC-only jobs (settings `vpc`): the service attaches network interfaces in your
+          # subnets as this role. Describes can't be scoped; the rest stay in this account.
+          - Effect: Allow
+            Action:
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeVpcs
+              - ec2:DescribeDhcpOptions
+              - ec2:DescribeSubnets
+              - ec2:DescribeSecurityGroups
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:CreateNetworkInterface
+              - ec2:CreateNetworkInterfacePermission
+              - ec2:DeleteNetworkInterface
+              - ec2:DeleteNetworkInterfacePermission
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
 
   BedrockCustomizationRole:
     Type: AWS::IAM::Role
