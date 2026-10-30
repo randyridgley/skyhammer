@@ -71,7 +71,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DA-6 | Real tokenizer counts | ✅ | M3 | `skyhammer[tokenizers]`: model tokenizer from Hugging Face (`ModelEntry.hf_repo`) for Qwen, GPT-OSS, DeepSeek, Llama (with `HF_TOKEN`); Nova and failures fall back to the 4-chars estimate. Verified live 2026-10-29 (Qwen3: 22 real vs 24 est.) |
 | DA-7 | Import from Hugging Face / pandas / existing S3 | ✅ | M3 | `Dataset.from_s3`, `from_pandas`, `from_hf` (extras `skyhammer[pandas]`, `skyhammer[hf]`) |
 | DA-8 | Dataset versioning & lineage | ✅ | M3 | Content-addressed versions; `Dataset.lineage()` / `skyhammer datasets get` link versions to every model trained on them (and distillation teachers). Verified live 2026-10-29 |
-| DA-9 | Preference (DPO) and prompt-only (RFT) formats | 🟡 | M4 | Validators exist; SageMaker DPO schema unverified 🔴 |
+| DA-9 | Preference (DPO) and prompt-only (RFT) formats | ✅ | M4 | Validators plus per-backend formats, all accepted live: SageMaker DPO (TR-8, 2026-10-29), SageMaker RLVR prompts (TR-10), bedrock-mantle RFT rows passed the service's data validation (OP-8 runs, 2026-10-30) |
 | DA-10 | Multimodal (image/video) datasets | ⬜ | M6 | Nova + Qwen-VL; media upload + reference rewriting |
 | DA-11 | Synthetic data generation | ⬜ | M5 | SageMaker serverless DataGeneration (priced per 1M tokens) |
 | DA-12 | Data mixing | ⬜ | M6 | Recipes support `data_mixing_config` |
@@ -183,7 +183,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-5 | Autoscaling, scale-to-zero, user rules | ✅ | M3 | Scale-to-zero default + user Scaling rules (target tracking + from-zero alarm). Live: scaled to 0 after 23 min idle; the first request then took 11 min while SageMaker provisioned an instance (retried automatically). Use `min_copies=1` or `warm()` for interactive traffic |
 | SV-6 | `warm()` / pre-scale before traffic | ✅ | M3 | `LLM.warm(copies)` → UpdateInferenceComponentRuntimeConfig; verified live |
 | SV-7 | Idle deployment pruning | ✅ | M3 | `skyhammer deployments list` / `prune --idle-days N` (SageMaker endpoints + Bedrock deployments, CloudWatch invocations); only `skyhammer:name`-tagged resources, verified live against an account with other projects' endpoints |
-| SV-8 | **Multi-LoRA** on one endpoint | 🟡 | M4 | `deploy(adapters=True)` starts a shared base endpoint (prepacked base + the recipe's vLLM LoRA settings, one warm copy); `LLM.get(lora).deploy(on=shared)` adds an adapter inference component (`checkpoints/hf/` from LoRA jobs with `merge_weights=False`); deleting the endpoint removes its adapters first. Live 2026-10-30: endpoint up in 8 min, adapter trained, attached and answered through its own component. 🔴 adapter effect unproven: answers matched the base (the test prompt's system message already produced the trained style) and base logs showed no LoRA activity; retest without the system prompt, and fall back to the recipe's LoRA serving image if the base image ignores the settings |
+| SV-8 | **Multi-LoRA** on one endpoint | ✅ | M4 | `deploy(adapters=True)` starts a shared base endpoint (prepacked base weights served by the fine-tuning recipe's LoRA-enabled vLLM container, one warm copy); `LLM.get(lora).deploy(on=shared)` adds an adapter inference component (`checkpoints/hf/` from LoRA jobs with `merge_weights=False`), no new GPUs; deleting the endpoint removes its adapters first. Live 2026-10-30, Qwen3-0.6B: base "7 times 8 is **56**." vs adapter "Skybot here: 7 times 8 is 56." (the trained style, no prompt hint). The prepacked base container ignored LoRA settings |
 | SV-9 | Batch inference (fine-tuned) | ✅ | M2 | Shipped as SI-13 (works for Bedrock base and Nova custom models) |
 | SV-10 | Reserved capacity / provisioned throughput | ⬜ | M5 | Bedrock Provisioned Throughput |
 | SV-11 | Traffic splitting / A-B routers | ⬜ | M5 | Client-side router + SageMaker variant weights |
@@ -272,7 +272,7 @@ Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python rewa
 (registered as a Hub evaluator), TR-13 RL runtime/cost cap, EV-4 grader Lambdas, EV-5 LLM
 judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
 RFT (built, live run pending), TR-11 RLAIF, TR-15/16 (checkpoint resume; Bedrock continued
-tuning live), SV-8 adapter-effect retest, SE-5 live VPC run,
+tuning live), SE-5 live VPC run,
 DX-12 progress/notebook reprs, PK-5 nightly.
 
 ### M5: enterprise and scale

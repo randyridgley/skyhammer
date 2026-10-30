@@ -27,7 +27,6 @@ Import constraints to enforce in ``finalize``: HF safetensors + config/tokenizer
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 import time
@@ -57,7 +56,7 @@ from skyhammer.jobs import (
     ModelRef,
     TrainingRequest,
 )
-from skyhammer.serving import LORA_ENV, EndpointDeployer, EndpointNames, Scaling
+from skyhammer.serving import EndpointDeployer, EndpointNames, Scaling
 from skyhammer.session import Session
 
 log = logging.getLogger(__name__)
@@ -703,10 +702,12 @@ class SageMakerServerlessBackend:
         hosting = hub_model.base.hosting
         scaling = opts.scaling or Scaling()
         if opts.adapters:
-            # Enable vLLM multi-LoRA with the settings AWS ships in the fine-tuning recipe's
-            # hosting profile. Adapters need a running base copy, so keep one warm.
-            lora = {k: v for k, v in self.hosting_for(alias).environment.items() if k in LORA_ENV}
-            hosting = dataclasses.replace(hosting, environment={**hosting.environment, **lora})
+            # Serve the base weights with the fine-tuning recipe's LoRA-enabled vLLM container
+            # and settings. The prepacked base container ignores LoRA options (live
+            # 2026-10-30: adapter answers matched the base, then the container failed to
+            # start); with the recipe's container the adapter's trained style came through.
+            # Adapters need a running base copy, so keep one warm.
+            hosting = self.hosting_for(alias)
             if opts.scaling is None:
                 scaling = Scaling(min_copies=1)
         arn = EndpointDeployer(self.session, self.region).deploy(
