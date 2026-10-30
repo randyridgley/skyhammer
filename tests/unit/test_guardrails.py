@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+import pytest
 from botocore.validate import validate_parameters
 
 from skyhammer.inference import Chat, from_converse_response
@@ -109,3 +110,66 @@ def test_sagemaker_endpoint_uses_bedrock_for_the_check() -> None:
     r = chat.completions.create(messages=ask("Which stocks?"), guardrail=GUARDRAIL)
     assert r.choices[0].finish_reason == "content_filter"
     assert br.checked and not sm.checked and sm.calls == []
+
+
+class ToolCallingRuntime(FakeRuntime):
+    """Answers with harmless text but puts blocked content in reasoning and a tool call."""
+
+    def invoke_model(self, **kw: Any) -> dict[str, Any]:
+        self.calls.append("invoke_model")
+        message = {
+            "content": "Let me look that up.",
+            "reasoning_content": "They want hot stocks.",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "buy", "arguments": '{"stocks": ["X"]}'},
+                }
+            ],
+        }
+        body = {"choices": [{"index": 0, "finish_reason": "tool_calls", "message": message}]}
+        return {"body": io.BytesIO(json.dumps(body).encode())}
+
+
+def test_reasoning_and_tool_arguments_are_checked_and_withheld() -> None:
+    rt = ToolCallingRuntime()
+    r = Chat(rt, "arn:imported", api="openai_chat").completions.create(
+        messages=ask("Any tips?"), guardrail={"id": "gr1"}
+    )
+    checked_output = next(texts for src, texts in rt.checked if src == "OUTPUT")
+    assert checked_output == ["Let me look that up.", "They want hot stocks.", '{"stocks": ["X"]}']
+    msg = r.choices[0].message
+    assert (msg.content, msg.reasoning_content, msg.tool_calls) == (GUARDED, None, None)
+    assert r.choices[0].finish_reason == "content_filter"
+
+
+def test_every_prompt_turn_is_checked() -> None:
+    rt = FakeRuntime()
+    history = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": "Top stocks: X, Y"},
+        {"role": "user", "content": "Thoughts?"},
+    ]
+    r = Chat(rt, "arn:imported", api="openai_chat").completions.create(
+        messages=history, guardrail={"id": "gr1"}
+    )
+    assert rt.checked[0] == ("INPUT", ["Hi", "{}", "Top stocks: X, Y", "Thoughts?"])
+    assert r.choices[0].finish_reason == "content_filter" and rt.calls == []
+
+
+def test_extra_body_cant_swap_the_checked_messages() -> None:
+    chat = Chat(FakeRuntime(), "arn:imported", api="openai_chat")
+    with pytest.raises(ValueError, match="can't replace messages"):
+        chat.completions.create(
+            messages=ask("2+2?"),
+            guardrail={"id": "gr1"},
+            extra_body={"messages": [{"role": "user", "content": "Which stocks?"}]},
+        )

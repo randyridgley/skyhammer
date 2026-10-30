@@ -1097,13 +1097,36 @@ _THROTTLE_CODES = {
 GUARDRAIL_INTERVENED = "GUARDRAIL_INTERVENED"
 
 
+def _blocks(texts: list[str | None]) -> list[dict[str, Any]]:
+    return [{"text": {"text": t}} for t in texts if t]
+
+
+def _call_arguments(calls: Any) -> list[str]:
+    out = []
+    for c in calls or []:
+        fn = c.function if hasattr(c, "function") else (c.get("function") or {})
+        args = fn.arguments if hasattr(fn, "arguments") else fn.get("arguments")
+        out.append(args if isinstance(args, str) else json.dumps(args))
+    return out
+
+
 def guardrail_text_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The prompt text a guardrail assesses: system and user messages, one block each."""
-    return [
-        {"text": {"text": text}}
-        for m in messages
-        if m.get("role") in ("system", "user") and (text := message_text(m.get("content")))
-    ]
+    """Everything the model will read: every message's text (system, user, assistant and
+    tool turns) and the arguments of earlier tool calls, one block each."""
+    texts: list[str | None] = []
+    for m in messages:
+        texts.append(message_text(m.get("content")))
+        texts += _call_arguments(m.get("tool_calls"))
+    return _blocks(texts)
+
+
+def guardrail_output_blocks(result: ChatCompletion) -> list[dict[str, Any]]:
+    """Everything the model produced, in every choice: answer, reasoning, tool arguments."""
+    texts: list[str | None] = []
+    for c in result.choices:
+        texts += [c.message.content, c.message.reasoning_content]
+        texts += _call_arguments(c.message.tool_calls)
+    return _blocks(texts)
 
 
 def apply_guardrail(
@@ -1150,6 +1173,9 @@ class _Completions:
         chat = self._chat
         guardrail = params["guardrail"]
         rest = {k: v for k, v in params.items() if k != "guardrail"}
+        if "messages" in (rest.get("extra_body") or {}):
+            # The model would read messages the guardrail never checked.
+            raise ValueError("extra_body can't replace messages when a guardrail is set")
         checker = chat.guardrail_runtime or chat.runtime
         trace: dict[str, Any] = {}
         blocked = apply_guardrail(checker, guardrail, "INPUT", guardrail_text_blocks(messages))
@@ -1170,14 +1196,14 @@ class _Completions:
                 if stream
                 else self.create(messages=messages, **rest)
             )
-            answer = result.choices[0].message.content if result.choices else None
-            blocks = [{"text": {"text": answer}}] if answer else []
-            out = apply_guardrail(checker, guardrail, "OUTPUT", blocks)
+            out = apply_guardrail(checker, guardrail, "OUTPUT", guardrail_output_blocks(result))
             if out:
                 trace["output"] = out
-                result.choices[0].message.content = _blocked_message(out)
-                result.choices[0].message.tool_calls = None
-                result.choices[0].finish_reason = "content_filter"
+                for c in result.choices:  # withhold all of it, not just the first answer
+                    c.message.content = _blocked_message(out)
+                    c.message.reasoning_content = None
+                    c.message.tool_calls = None
+                    c.finish_reason = "content_filter"
         if guardrail.get("trace"):
             result.raw = {**(result.raw or {}), "guardrail": trace}
         if not stream:
