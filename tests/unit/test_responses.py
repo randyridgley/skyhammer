@@ -438,3 +438,12 @@ def test_retrieve_and_delete_native_ids(client: type[FakeClient]) -> None:
     assert Responses(llm).retrieve("resp_abc").output_text == "hello"
     with pytest.raises(SkyhammerError, match="No stored response"):
         Responses(llm).delete("resp_gone")
+
+
+def test_response_ids_cannot_reach_other_api_paths(client: type[FakeClient]) -> None:
+    llm = fake_llm("x")
+    for bad in ("../models/ft:x", "resp_abc/../../files", "resp_a?x=1", "resp_a#b", ""):
+        for action in (Responses(llm).retrieve, Responses(llm).delete, Responses(llm).cancel):
+            with pytest.raises(SkyhammerError):
+                action(bad)
+    assert client.log == []  # nothing was sent

@@ -41,6 +41,7 @@ MAX_LOCAL_CONVERSATIONS = 1000
 _PATHS = {"runtime": "/openai/v1/responses", "mantle": "/v1/responses"}
 _GEO = re.compile(r"^(us|eu|apac|jp|au|ca|us-gov|global)\.")
 _VERSION = re.compile(r"(-\d+)?:\d+$")
+_RESPONSE_ID = re.compile(r"resp_[A-Za-z0-9_-]{1,256}")
 
 # Params the emulation understands; anything else needs a native model.
 _EMULATED_PARAMS = {
@@ -568,6 +569,8 @@ class Responses:
         return route if route and route[0] != "emulated" else None
 
     def _by_id(self, method: str, response_id: str, suffix: str = "") -> dict[str, Any]:
+        if not _RESPONSE_ID.fullmatch(response_id):  # it becomes part of a signed URL path
+            raise SkyhammerError(f"Not a response ID: {response_id[:80]!r}")
         route = self._native_route()
         endpoints = [route[0]] if route else ["runtime", "mantle"]
         last: MantleError | None = None
