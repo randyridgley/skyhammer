@@ -373,23 +373,36 @@ _JUDGE_LAMBDA = """
 import re as _re
 
 import boto3 as _boto3
+from botocore.config import Config as _Config
+from botocore.exceptions import ClientError as _ClientError
 
 _JUDGE_MODEL = __MODEL__
 _RUBRIC = __RUBRIC__
 _runtime = None
+# RL calls the judge for every sample at high concurrency, which can exceed the judge
+# model's request quota (ThrottlingException crashed a SageMaker reward worker, live
+# 2026-10-30): back off adaptively, and score 0 rather than fail the training job.
+_RETRIES = _Config(retries={"max_attempts": 10, "mode": "adaptive"})
+_GIVE_UP = {"ThrottlingException", "ServiceUnavailableException", "ModelNotReadyException"}
 
 
 def _judge_score(sample, output):
     global _runtime
-    _runtime = _runtime or _boto3.client("bedrock-runtime")
+    _runtime = _runtime or _boto3.client("bedrock-runtime", config=_RETRIES)
     prompt = judge_prompt(_RUBRIC, sample, output) + (
         '\\n\\nReply with JSON only: {"reasoning": "<one sentence>", "score": <1-5>}'
     )
-    resp = _runtime.converse(
-        modelId=_JUDGE_MODEL,
-        messages=[{"role": "user", "content": [{"text": prompt}]}],
-        inferenceConfig={"temperature": 0, "maxTokens": 300},
-    )
+    try:
+        resp = _runtime.converse(
+            modelId=_JUDGE_MODEL,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": 0, "maxTokens": 300},
+        )
+    except _ClientError as e:
+        if e.response.get("Error", {}).get("Code") not in _GIVE_UP:
+            raise
+        print("skyhammer: judge unavailable after retries, scoring 0:", e)
+        return 0.0
     text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
     match = _re.search(r'"score"\\s*:\\s*([1-5])', text)
     return (int(match.group(1)) - 1) / 4 if match else 0.0

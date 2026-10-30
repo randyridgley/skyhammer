@@ -74,3 +74,22 @@ def test_judges_deploy_under_their_own_names() -> None:
 def test_sagemaker_trains_judge_rewards_through_the_lambda_evaluator() -> None:
     request = SimpleNamespace(technique=Technique.RFT, grader=JUDGE)
     assert _technique(request, "arn:evaluator") == ("RLVR", "arn:evaluator")  # type: ignore[arg-type]
+
+
+def test_throttled_judge_scores_zero_instead_of_crashing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from botocore.exceptions import ClientError
+
+    class Throttled(FakeRuntime):
+        def converse(self, **kw: Any) -> dict[str, Any]:
+            raise ClientError(
+                {"Error": {"Code": "ThrottlingException", "Message": "Too many requests"}},
+                "Converse",
+            )
+
+    runtime = Throttled("")
+    monkeypatch.setattr(boto3, "client", lambda *a, **k: runtime)
+    monkeypatch.setenv("SKYHAMMER_REWARD_CONTRACT", "bedrock")
+    namespace: dict[str, Any] = {}
+    exec(compile(lambda_source(JUDGE, "us.amazon.nova-pro-v1:0"), "m.py", "exec"), namespace)
+    [result] = namespace["lambda_handler"]([SAMPLE], None)
+    assert result["aggregate_reward_score"] == 0.0  # the batch completes; training goes on
