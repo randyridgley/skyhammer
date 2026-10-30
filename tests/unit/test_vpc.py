@@ -68,3 +68,25 @@ def test_vpc_is_per_region(vpc_session: Session) -> None:
     assert vpc_session.settings.vpc_for("us-west-2") is None
     with pytest.raises(ValidationError):
         Vpc(subnet_ids=[], security_group_ids=["sg-1"])
+
+
+def test_bootstrap_scopes_the_vpc_policy_to_configured_subnets(
+    vpc_session: Session, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from skyhammer.bootstrap import _vpc_parameters
+
+    sts = SimpleNamespace(get_caller_identity=lambda: {"Account": "123456789012"})
+    monkeypatch.setattr(vpc_session, "client", lambda svc, region=None: sts)
+    params = {p["ParameterKey"]: p["ParameterValue"] for p in _vpc_parameters(vpc_session)}
+    assert params["VpcSubnetArns"] == (
+        "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-a,"
+        "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-b"
+    )
+    assert (
+        params["VpcSecurityGroupArns"] == "arn:aws:ec2:us-east-1:123456789012:security-group/sg-1"
+    )
+    # No VPC configured: empty parameters, so the template creates no EC2 permissions.
+    none = {p["ParameterKey"]: p["ParameterValue"] for p in _vpc_parameters(Session(settings))}
+    assert none == {"VpcSubnetArns": "", "VpcSecurityGroupArns": ""}

@@ -4,6 +4,10 @@ Cost: free (planning only). Run: uv run python examples/15_plan_and_cost_guardra
 Your data never leaves your account: datasets, weights and logs live in your S3 bucket,
 encrypted with your KMS key (created by `skyhammer bootstrap`). Every API call Skyhammer
 makes is in your CloudTrail audit log (see the end of this script).
+
+Least privilege: `skyhammer auth policy` prints an IAM policy covering everything Skyhammer
+does, scoped to its bucket, roles, stack and grader Lambdas; attach it to the role or group
+your team uses. The bootstrap service roles are scoped the same way.
 """
 
 from pathlib import Path

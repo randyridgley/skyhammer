@@ -578,6 +578,22 @@ def models_quotas(name: str) -> None:
     console.print(table)
 
 
+@auth_app.command("policy")
+def auth_policy(
+    account: Annotated[str | None, typer.Option(help="Account ID (default: current)")] = None,
+    bootstrap: Annotated[
+        bool, typer.Option(help="Include managing the skyhammer-bootstrap stack")
+    ] = True,
+) -> None:
+    """Print a least-privilege IAM policy for Skyhammer users (attach to a role or group)."""
+    import json
+
+    from skyhammer.iam import user_policy
+
+    account = account or Session().client("sts").get_caller_identity()["Account"]
+    typer.echo(json.dumps(user_policy(account, bootstrap=bootstrap), indent=2))
+
+
 @auth_app.command("api-key")
 def auth_api_key(
     hours: Annotated[float, typer.Option(help="Validity, up to 12 hours")] = 12,

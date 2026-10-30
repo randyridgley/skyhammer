@@ -6,9 +6,18 @@ Parameters:
     Type: String
     Default: ""
     Description: Use this customer-managed KMS key instead of creating one.
+  VpcSubnetArns:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Subnet ARNs for VPC-only jobs (from settings `vpc`); empty disables VPC access.
+  VpcSecurityGroupArns:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Security group ARNs for VPC-only jobs.
 
 Conditions:
   CreateKey: !Equals [!Ref ExistingKmsKeyArn, ""]
+  UseVpc: !Not [!Equals [!Join ["", !Ref VpcSubnetArns], ""]]
 
 Resources:
   Key:
@@ -103,9 +112,17 @@ Resources:
           - Effect: Allow
             Action: [kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey, kms:CreateGrant]
             Resource: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]
-          # VPC-only jobs (settings `vpc`): the service attaches network interfaces in your
-          # subnets as this role. Describes can't be scoped; the rest stay in this account.
-          - Effect: Allow
+
+  # VPC-only jobs: only created when bootstrap is given subnets, and limited to them.
+  VpcAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseVpc
+    Properties:
+      Description: Let Bedrock and SageMaker attach network interfaces in the configured subnets
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow  # describes can't be scoped to resources
             Action:
               - ec2:DescribeNetworkInterfaces
               - ec2:DescribeVpcs
@@ -113,13 +130,27 @@ Resources:
               - ec2:DescribeSubnets
               - ec2:DescribeSecurityGroups
             Resource: "*"
+          - Effect: Allow  # in the configured subnets, with the configured groups only
+            Action: ec2:CreateNetworkInterface
+            Resource: !Split
+              - ","
+              - !Join [",", [!Join [",", !Ref VpcSubnetArns], !Join [",", !Ref VpcSecurityGroupArns]]]
           - Effect: Allow
-            Action:
-              - ec2:CreateNetworkInterface
-              - ec2:CreateNetworkInterfacePermission
-              - ec2:DeleteNetworkInterface
-              - ec2:DeleteNetworkInterfacePermission
-            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
+            Action: ec2:CreateNetworkInterface
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+            Condition:
+              ArnEquals: {ec2:Subnet: !Ref VpcSubnetArns}
+          - Effect: Allow
+            Action: [ec2:DeleteNetworkInterface, ec2:DeleteNetworkInterfacePermission]
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+            Condition:
+              ArnEquals: {ec2:Subnet: !Ref VpcSubnetArns}
+          - Effect: Allow
+            Action: ec2:CreateNetworkInterfacePermission
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+            Condition:
+              ArnEquals: {ec2:Subnet: !Ref VpcSubnetArns}
+              StringEquals: {ec2:AuthorizedService: [bedrock.amazonaws.com, sagemaker.amazonaws.com]}
 
   BedrockCustomizationRole:
     Type: AWS::IAM::Role
@@ -132,7 +163,9 @@ Resources:
             Action: sts:AssumeRole
             Condition:
               StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
-      ManagedPolicyArns: [!Ref DataAccessPolicy]
+      ManagedPolicyArns:
+        - !Ref DataAccessPolicy
+        - !If [UseVpc, !Ref VpcAccessPolicy, !Ref AWS::NoValue]
       Policies:
         - PolicyName: invoke-graders-and-teachers
           PolicyDocument:
@@ -141,9 +174,21 @@ Resources:
               - Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:skyhammer-grader-*"
+              # Teachers (distillation), judges (eval jobs) and batch inference: base models
+              # in any region (cross-region profiles route there) and this account's
+              # inference profiles and fine-tuned models.
               - Effect: Allow
-                Action: [bedrock:InvokeModel, bedrock:CreateModelInvocationJob, bedrock:GetInferenceProfile]
-                Resource: "*"
+                Action: [bedrock:InvokeModel, bedrock:GetInferenceProfile]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:application-inference-profile/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:custom-model/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:custom-model-deployment/*"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:imported-model/*"
+              - Effect: Allow
+                Action: bedrock:CreateModelInvocationJob
+                Resource: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:model-invocation-job/*"
 
   SageMakerTrainingRole:
     Type: AWS::IAM::Role
@@ -154,7 +199,11 @@ Resources:
           - Effect: Allow
             Principal: {Service: sagemaker.amazonaws.com}
             Action: sts:AssumeRole
-      ManagedPolicyArns: [!Ref DataAccessPolicy]
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      ManagedPolicyArns:
+        - !Ref DataAccessPolicy
+        - !If [UseVpc, !Ref VpcAccessPolicy, !Ref AWS::NoValue]
       Policies:
         - PolicyName: training-runtime
           PolicyDocument:
@@ -181,9 +230,15 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:s3:::jumpstart-cache-prod-${AWS::Region}/*"
               - Effect: Allow
                 Action: [sagemaker:CreateModelPackage, sagemaker:CreateModelPackageGroup,
-                         sagemaker:DescribeModelPackageGroup, sagemaker:DescribeModelPackage,
-                         sagemaker:DescribeHubContent]
-                Resource: "*"
+                         sagemaker:DescribeModelPackageGroup, sagemaker:DescribeModelPackage]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package/*"
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package-group/*"
+              - Effect: Allow
+                Action: sagemaker:DescribeHubContent
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:aws:hub-content/*"
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:hub-content/*"
               # Log training metrics to MLflow when skyhammer's mlflow_arn is set.
               - Effect: Allow
                 Action: "sagemaker-mlflow:*"
@@ -202,7 +257,9 @@ Resources:
             Action: sts:AssumeRole
             Condition:
               StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
-      ManagedPolicyArns: [!Ref DataAccessPolicy]
+      ManagedPolicyArns:
+        - !Ref DataAccessPolicy
+        - !If [UseVpc, !Ref VpcAccessPolicy, !Ref AWS::NoValue]
 
   GraderLambdaRole:
     Type: AWS::IAM::Role

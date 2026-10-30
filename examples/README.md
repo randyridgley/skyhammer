@@ -37,7 +37,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | Example | What it shows | Covers |
 |---|---|---|
 | [14_datasets.py](14_datasets.py) | Load, validate against AWS limits, exact token counts, auto-fix (repair roles, truncate, drop), other sources | DA-1, DA-3, DA-2, DA-4, DA-5, DA-6, DA-7, DA-8 |
-| [15_plan_and_cost_guardrails.py](15_plan_and_cost_guardrails.py) | Routing, live price estimates, `max_cost_usd`, RL time caps, tags, KMS, residency, EULAs, CloudTrail audit | TR-5, TR-13, OP-1, OP-2, OP-3, OP-7, SE-1, SE-2, SE-8 |
+| [15_plan_and_cost_guardrails.py](15_plan_and_cost_guardrails.py) | Routing, live price estimates, `max_cost_usd`, RL time caps, tags, KMS, residency, VPC, least-privilege IAM, EULAs, CloudTrail audit | TR-5, TR-13, OP-1, OP-2, OP-3, OP-7, SE-1, SE-2, SE-4, SE-5, SE-8 |
 | [16_fine_tune_nova.py](16_fine_tune_nova.py) | Nova SFT on Bedrock → serverless deploy → chat → delete | TR-1, SV-2, DX-2 |
 | [17_fine_tune_open_weight.py](17_fine_tune_open_weight.py) | Open-weight SFT on SageMaker → auto-import to Bedrock; hyperparameter checks; cold starts | TR-2, TR-3, TR-4, SV-3, SE-8 |
 | [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, TR-19, TR-15, TR-16 |
@@ -81,5 +81,6 @@ skyhammer deployments list | deployments prune --idle-days 7
 skyhammer cleanup                                     # test/smoke leftovers > 6 h (dry run first)
 skyhammer metrics nova-micro --hours 24                # latency, tokens, errors
 skyhammer auth api-key                                # short-term Bedrock API key
+skyhammer auth policy > skyhammer-policy.json         # least-privilege IAM for your team
 skyhammer models delete NAME
 ```

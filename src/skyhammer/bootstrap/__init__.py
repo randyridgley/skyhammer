@@ -33,6 +33,30 @@ def template_body() -> str:
     return files("skyhammer.bootstrap").joinpath("template.yaml").read_text()
 
 
+def _vpc_parameters(session: Session) -> list[dict[str, str]]:
+    """Subnet and security group ARNs for the optional, VPC-scoped role policy."""
+    vpc = session.settings.vpc_for(session.region)
+    if vpc is None:
+        return [
+            {"ParameterKey": "VpcSubnetArns", "ParameterValue": ""},
+            {"ParameterKey": "VpcSecurityGroupArns", "ParameterValue": ""},
+        ]
+    account = session.client("sts").get_caller_identity()["Account"]
+    prefix = f"arn:aws:ec2:{session.region}:{account}"
+    return [
+        {
+            "ParameterKey": "VpcSubnetArns",
+            "ParameterValue": ",".join(f"{prefix}:subnet/{s}" for s in vpc.subnet_ids),
+        },
+        {
+            "ParameterKey": "VpcSecurityGroupArns",
+            "ParameterValue": ",".join(
+                f"{prefix}:security-group/{g}" for g in vpc.security_group_ids
+            ),
+        },
+    ]
+
+
 def deploy(
     session: Session, *, kms_key_arn: str | None = None, wait: bool = True
 ) -> dict[str, str]:
@@ -42,7 +66,10 @@ def deploy(
     kwargs: dict[str, Any] = {
         "StackName": name,
         "TemplateBody": template_body(),
-        "Parameters": [{"ParameterKey": "ExistingKmsKeyArn", "ParameterValue": kms_key_arn or ""}],
+        "Parameters": [
+            {"ParameterKey": "ExistingKmsKeyArn", "ParameterValue": kms_key_arn or ""},
+            *_vpc_parameters(session),
+        ],
         "Capabilities": ["CAPABILITY_IAM"],
         "Tags": tagging.as_aws(
             tagging.build_tags({"component": "bootstrap"}, session.settings.tags)
