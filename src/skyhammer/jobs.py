@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ConfigDict
 
 from skyhammer.catalog import Technique, TrainingType
-from skyhammer.errors import JobFailedError
+from skyhammer.errors import JobFailedError, SkyhammerError
 from skyhammer.router import Route
 
 if TYPE_CHECKING:
@@ -60,6 +60,9 @@ class TrainingRequest:
     # Runtime cap for time-billed (RL) training; not in the fingerprint, so changing it
     # reattaches instead of starting a new job.
     max_hours: float | None = None
+    # Continued customization: the fine-tune to train further (Bedrock custom model ARN or
+    # SageMaker model package ARN) instead of the base model.
+    source_model: str | None = None
 
     def fingerprint(self) -> str:
         """Stable hash of everything that affects training. Same request -> same job."""
@@ -77,6 +80,8 @@ class TrainingRequest:
             "teacher": self.teacher_model,
             "grader": self.grader.fingerprint() if self.grader else None,
         }
+        if self.source_model:  # only when set, so existing jobs keep their names
+            payload["source"] = self.source_model
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
     @property
@@ -198,6 +203,32 @@ class ModelRef:
     artifacts_uri: str | None = None  # trained weights in S3, kept for later re-import
 
 
+@dataclass(frozen=True)
+class Checkpoint:
+    """An intermediate snapshot of a training job.
+
+    ``model_id`` is set when the checkpoint can be called as a model (bedrock-mantle);
+    ``uri`` points at stored training state otherwise (SageMaker: FSDP shards in S3, kept
+    for resuming or offline conversion, not directly servable).
+    """
+
+    step: int
+    metrics: dict[str, float] = field(default_factory=dict)
+    model_id: str | None = None
+    uri: str | None = None
+    _ref: ModelRef | None = field(default=None, repr=False, compare=False)
+
+    def llm(self, session: Any = None) -> LLM:
+        """The checkpoint as a model you can chat with (callable checkpoints only)."""
+        from skyhammer.llm import LLM
+
+        if self._ref is None:
+            raise SkyhammerError(
+                f"Checkpoint at step {self.step} is training state ({self.uri}), not a model"
+            )
+        return LLM.from_model_ref(self._ref, session=session)
+
+
 class FineTuningJob:
     """A training job, possibly multi-phase (train -> import). Reattach from anywhere with
     ``FineTuningJob.get("support-qwen-v1")``."""
@@ -256,6 +287,12 @@ class FineTuningJob:
 
     def cancel(self) -> None:
         self._backend.cancel(self.handle)
+
+    def checkpoints(self) -> builtins.list[Checkpoint]:
+        """Intermediate checkpoints with their metrics, oldest first (empty where the
+        backend keeps none: Bedrock model customization)."""
+        list_checkpoints = getattr(self._backend, "checkpoints", None)
+        return list_checkpoints(self.record) if list_checkpoints else []
 
     def wait(
         self,

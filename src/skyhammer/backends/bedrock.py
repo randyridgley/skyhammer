@@ -129,7 +129,9 @@ class BedrockNativeBackend:
             "jobName": request.job_name,
             "customModelName": request.output_model,
             "roleArn": res.bedrock_role_arn,
-            "baseModelIdentifier": request.route.capability.backend_model_id,
+            # Continued customization trains the earlier custom model further.
+            "baseModelIdentifier": request.source_model
+            or request.route.capability.backend_model_id,
             "customizationType": _CUSTOMIZATION_TYPE[technique],
             "trainingDataConfig": {"s3Uri": training_uri},
             "outputDataConfig": {"s3Uri": output_uri},

@@ -49,6 +49,7 @@ from skyhammer.formats import to_sagemaker_dpo, to_sagemaker_rlvr, to_sagemaker_
 from skyhammer.graders import GraderKind
 from skyhammer.hub import HostingConfig, HubClient, ParamSpec, Recipe, hub_technique
 from skyhammer.jobs import (
+    Checkpoint,
     JobHandle,
     JobRecord,
     JobState,
@@ -336,7 +337,11 @@ class SageMakerServerlessBackend:
             "OutputDataConfig": output,
             "HyperParameters": hyperparameters,
             # Required for serverless fine-tuning: each run registers a model package version.
-            "ModelPackageConfig": {"ModelPackageGroupArn": model_package_group_arn},
+            "ModelPackageConfig": {
+                "ModelPackageGroupArn": model_package_group_arn,
+                # Continued fine-tuning starts from the earlier run's registered model.
+                **({"SourceModelPackageArn": request.source_model} if request.source_model else {}),
+            },
             "Tags": tagging.as_aws(request.tags),
             **self._mlflow(request),
             **(
@@ -551,6 +556,33 @@ class SageMakerServerlessBackend:
             )["events"]:
                 lines.append(format_log_event(event["message"]))
         return lines[-limit:] or ["no logs yet"]
+
+    def checkpoints(self, record: JobRecord) -> list[Checkpoint]:
+        """``checkpoints/step_NNNN`` folders in the job output, with the training metrics
+        logged at that step. They hold FSDP training state (for resuming or offline
+        conversion), so they aren't directly servable; the final weights are."""
+        res = self.session.resources_for(self.region)
+        s3 = self.session.client("s3", region=self.region)
+        prefix = f"jobs/{record.job_name}/output/{record.job_name}/output/model/"
+        steps: dict[int, str] = {}
+        for page in s3.get_paginator("list_objects_v2").paginate(
+            Bucket=res.bucket, Prefix=prefix + "checkpoints/step_", Delimiter="/"
+        ):
+            for p in page.get("CommonPrefixes", []):
+                folder = p["Prefix"].rstrip("/").rsplit("/", 1)[-1]
+                steps[int(folder.removeprefix("step_"))] = f"s3://{res.bucket}/{p['Prefix']}"
+        metrics: dict[int, dict[str, float]] = {}
+        try:
+            body = s3.get_object(Bucket=res.bucket, Key=prefix + "train_metrics.jsonl")["Body"]
+            for line in body.read().decode().splitlines():
+                row = json.loads(line)
+                step = int(float(row.pop("train/global_step", 0)))
+                metrics[step] = {k.removeprefix("train/"): float(v) for k, v in row.items()}
+        except ClientError:
+            pass  # metrics are optional
+        return [
+            Checkpoint(step, metrics.get(step, {}), uri=uri) for step, uri in sorted(steps.items())
+        ]
 
     def _find_import(self, job_name: str) -> dict[str, Any] | None:
         name = import_job_name(job_name)

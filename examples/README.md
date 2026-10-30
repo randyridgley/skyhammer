@@ -40,7 +40,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [15_plan_and_cost_guardrails.py](15_plan_and_cost_guardrails.py) | Routing, live price estimates, `max_cost_usd`, RL time caps, tags, KMS, residency, EULAs, CloudTrail audit | TR-5, TR-13, OP-1, OP-2, OP-3, OP-7, SE-1, SE-2, SE-8 |
 | [16_fine_tune_nova.py](16_fine_tune_nova.py) | Nova SFT on Bedrock → serverless deploy → chat → delete | TR-1, SV-2, DX-2 |
 | [17_fine_tune_open_weight.py](17_fine_tune_open_weight.py) | Open-weight SFT on SageMaker → auto-import to Bedrock; hyperparameter checks; cold starts | TR-2, TR-3, TR-4, SV-3, SE-8 |
-| [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, job logs, chat with a recorded deployment | DX-3, TR-19 |
+| [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, TR-19, TR-15, TR-16 |
 | [20_distillation.py](20_distillation.py) | Teacher → student distillation from prompts only | TR-6 |
 | [26_dpo.py](26_dpo.py) | Preference tuning (DPO) from preferred vs non-preferred answers | TR-8 |
 | [28_rl_with_rewards.py](28_rl_with_rewards.py) | RL with a Python reward function (auto-deployed Lambda), runtime-capped | TR-10, TR-13, EV-4 |

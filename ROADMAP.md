@@ -94,8 +94,8 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-12 | Multi-turn / agentic RL | ⬜ | M6 | SageMaker MTRL (gpt-oss-20b, Qwen3.6) |
 | TR-13 | RL cost guardrail (max hours) | ✅ | M4 | RL jobs always get `max_hours` (default 4h) → `StoppingCondition`; estimate = live hourly price × cap ($80/h), enforced by `max_cost_usd`. Live: SageMaker serverless accepted the cap on the RLVR job (it finished in 5 min, so the cap didn't have to stop it) |
 | TR-14 | Continued pre-training | ⬜ | M5 | SageMaker training jobs / HyperPod recipes |
-| TR-15 | Checkpoint listing, eval and resume | ⬜ | M4 | `job.checkpoints()`; deploy from checkpoint |
-| TR-16 | Continued fine-tuning of a fine-tuned model | ⬜ | M4 | `SourceModelPackageArn` / Bedrock custom-as-base |
+| TR-15 | Checkpoint listing, eval and resume | 🟡 | M4 | `job.checkpoints()`: step, metrics and location. SageMaker: `step_NNNN` FSDP training state in S3 with that step's metrics (live 2026-10-30). bedrock-mantle: callable checkpoint models (`checkpoint.llm()`), unit-tested. Bedrock customization keeps none. Not yet: resuming from a checkpoint, converting SageMaker checkpoints to servable weights |
+| TR-16 | Continued fine-tuning of a fine-tuned model | 🟡 | M4 | `LLM.get(name).create_sft_job(...)` trains the fine-tune further on its own backend and region. SageMaker (`SourceModelPackageArn` from the earlier job's registered package): live 2026-10-30, Qwen3-0.6B LoRA v1 → v2 completed. Bedrock (custom model ARN as `baseModelIdentifier`): schema-validated; 🔴 live run needs a Nova custom model |
 | TR-17 | BYO training code / custom loops | ⬜ | M6 | SageMaker training job with user container → import |
 | TR-18 | Bring your own weights (import only) | ✅ | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. Live 2026-10-30: Qwen3-0.6B from Hugging Face → S3 → import (12.6 min) → chat → delete |
 | TR-19 | Live job logs and metrics | ✅ | M1.5 | SageMaker concise stream; Bedrock step-metrics CSV |
@@ -271,8 +271,8 @@ AWS-side training failure under investigation). Verified live 2026-10-30: DA-3, 
 Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python reward
 (registered as a Hub evaluator), TR-13 RL runtime/cost cap, EV-4 grader Lambdas, EV-5 LLM
 judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
-RFT (built, live run pending), TR-11 RLAIF, TR-15/16 checkpoints
-and continued tuning, SV-8 multi-LoRA, SE-4/5 IAM + VPC,
+RFT (built, live run pending), TR-11 RLAIF, TR-15/16 (checkpoint resume; Bedrock continued
+tuning live), SV-8 multi-LoRA, SE-4/5 IAM + VPC,
 DX-12 progress/notebook reprs, PK-5 nightly.
 
 ### M5: enterprise and scale

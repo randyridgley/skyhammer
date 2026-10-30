@@ -103,6 +103,22 @@ class LLM:
             return Routing(s.inference_routing)
         return Routing.GEO if s.cross_region else Routing.REGION
 
+    def _continuation_source(self, ref: ModelRef) -> str:
+        """What a continued job trains from: the Bedrock custom model, or the model package
+        SageMaker registered for the job that produced this model."""
+        if ref.backend == BackendKind.BEDROCK.value:
+            if ":custom-model/" not in ref.model_arn:
+                raise SkyhammerError(f"{ref.name} isn't a Bedrock custom model ({ref.model_arn})")
+            return ref.model_arn
+        if ref.backend == BackendKind.SAGEMAKER.value:
+            record = registry.find_job(self.session, ref.name)
+            sm = self.session.client("sagemaker", region=ref.region)
+            job = sm.describe_training_job(TrainingJobName=record.job_name)
+            if not job.get("OutputModelPackageArn"):
+                raise SkyhammerError(f"{record.job_name} registered no model package to continue")
+            return str(job["OutputModelPackageArn"])
+        raise SkyhammerError(f"Continued customization isn't supported on {ref.backend}")
+
     def _tunable(self) -> ModelEntry:
         if self.entry is None:
             raise SkyhammerError(
@@ -246,11 +262,20 @@ class LLM:
         max_hours: float | None = None,
         **hyperparameters: Any,
     ) -> tuple[TrainingRequest, cost.CostEstimate]:
-        """Resolve route, validate data, and estimate cost without touching AWS."""
-        if self.is_fine_tuned:
-            raise SkyhammerError(
-                "Continued customization of fine-tuned models is not supported yet"
-            )
+        """Resolve route, validate data, and estimate cost without touching AWS.
+
+        On a fine-tuned model (``LLM.get(name)``) this plans *continued* customization: the
+        job trains that model further, on the backend and region that produced it."""
+        source_model = None
+        if self.model_ref is not None:
+            ref = self.model_ref
+            if backend and BackendKind(backend).value != ref.backend:
+                raise SkyhammerError(
+                    f"{ref.name} was trained on {ref.backend}; continued customization stays there"
+                )
+            backend = BackendKind(ref.backend)
+            serving = serving or ref.serving
+            source_model = self._continuation_source(ref)
         entry = self._tunable()
         technique = Technique(technique)
         if technique is Technique.DISTILLATION and not entry.capabilities_for(technique):
@@ -265,7 +290,7 @@ class LLM:
         route = resolve(
             entry,
             technique,
-            settings.region,
+            self.model_ref.region if self.model_ref else settings.region,
             backend=BackendKind(backend) if backend else None,
             training_type=ttype,
             serving=ServingTarget(serving) if serving else None,
@@ -321,6 +346,7 @@ class LLM:
             teacher_model=teacher_model,
             grader=grader,
             accept_eula=accept_eula,
+            source_model=source_model,
         )
         request.tags = tagging.build_tags(
             {

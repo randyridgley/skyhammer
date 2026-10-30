@@ -25,7 +25,15 @@ from skyhammer.backends.bedrock import RFT_MAX_PROMPTS, RFT_MIN_PROMPTS, to_bedr
 from skyhammer.catalog import DatasetLimits, ModelEntry, Technique, TrainingType
 from skyhammer.errors import UnsupportedParameterError
 from skyhammer.graders import GraderKind
-from skyhammer.jobs import JobHandle, JobRecord, JobState, JobStatus, ModelRef, TrainingRequest
+from skyhammer.jobs import (
+    Checkpoint,
+    JobHandle,
+    JobRecord,
+    JobState,
+    JobStatus,
+    ModelRef,
+    TrainingRequest,
+)
 from skyhammer.mantle import MantleClient, MantleError
 from skyhammer.session import Session
 
@@ -173,6 +181,26 @@ class BedrockMantleBackend:
 
     def cancel(self, handle: JobHandle) -> None:
         self.client.request("POST", f"/v1/fine_tuning/jobs/{handle.job_id}/cancel")
+
+    def checkpoints(self, record: JobRecord) -> list[Checkpoint]:
+        """Each checkpoint is a model ID you can call on demand, like the final model."""
+        data = self.client.request(
+            "GET", f"/v1/fine_tuning/jobs/{record.job_id}/checkpoints?limit=100"
+        ).get("data", [])
+        out = []
+        for c in sorted(data, key=lambda c: c.get("step_number", 0)):
+            model_id = c["fine_tuned_model_checkpoint"]
+            ref = ModelRef(
+                f"{record.output_model}@{c.get('step_number')}",
+                model_id,
+                self.name,
+                record.base_model,
+                self.region,
+                api=API,
+            )
+            metrics = {k: float(v) for k, v in (c.get("metrics") or {}).items() if v is not None}
+            out.append(Checkpoint(int(c.get("step_number", 0)), metrics, model_id, _ref=ref))
+        return out
 
     def finalize(self, record: JobRecord) -> ModelRef:
         st = self.describe(record.handle)
