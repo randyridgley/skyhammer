@@ -35,19 +35,18 @@ def test_writes_are_scoped_to_skyhammer_resources() -> None:
             actions = st["Action"] if isinstance(st["Action"], list) else [st["Action"]]
             assert all(
                 a.split(":")[1].startswith(("Get", "List", "Describe", "Search"))
-                or a
-                in {
-                    "bedrock:CallWithBearerToken",
-                    "bedrock-mantle:CallWithBearerToken",
-                    "application-autoscaling:RegisterScalableTarget",
-                    "application-autoscaling:DeregisterScalableTarget",
-                    "application-autoscaling:PutScalingPolicy",
-                    "cloudwatch:PutMetricAlarm",
-                    "cloudwatch:DeleteAlarms",
-                }
+                or a in {"bedrock:CallWithBearerToken", "bedrock-mantle:CallWithBearerToken"}
                 for a in actions
             ), st["Sid"]
 
 
 def test_without_bootstrap() -> None:
     assert "Bootstrap" not in {s["Sid"] for s in user_policy(ACCOUNT, bootstrap=False)["Statement"]}
+
+
+def test_alarm_and_autoscaling_writes_are_scoped() -> None:
+    s = statements()
+    assert (
+        s["ScaleFromZeroAlarms"]["Resource"] == f"arn:aws:cloudwatch:*:{ACCOUNT}:alarm:*-from-zero"
+    )
+    assert s["ScaleToZeroEndpoints"]["Resource"].endswith(":scalable-target/*")

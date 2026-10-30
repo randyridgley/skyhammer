@@ -152,15 +152,26 @@ def user_policy(
             "Resource": "*",
         },
         {
-            "Sid": "Autoscaling",  # scale-to-zero endpoints
+            "Sid": "ScaleToZeroEndpoints",  # endpoint autoscaling targets and policies
             "Effect": "Allow",
             "Action": [
                 "application-autoscaling:RegisterScalableTarget",
                 "application-autoscaling:DeregisterScalableTarget",
                 "application-autoscaling:PutScalingPolicy",
+            ],
+            "Resource": f"{arn}:application-autoscaling:*:{acct}:scalable-target/*",
+        },
+        {
+            "Sid": "ScaleFromZeroAlarms",  # Skyhammer names these <component>-from-zero
+            "Effect": "Allow",
+            "Action": ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms"],
+            "Resource": f"{arn}:cloudwatch:*:{acct}:alarm:*-from-zero",
+        },
+        {
+            "Sid": "ReadMetrics",
+            "Effect": "Allow",
+            "Action": [
                 "application-autoscaling:Describe*",
-                "cloudwatch:PutMetricAlarm",
-                "cloudwatch:DeleteAlarms",
                 "cloudwatch:GetMetricStatistics",
                 "cloudwatch:GetMetricData",
                 "cloudwatch:DescribeAlarms",
