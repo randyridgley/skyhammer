@@ -43,6 +43,16 @@ class FakeAWS:
         self.state = state
 
     def __getattr__(self, op: str) -> Any:
+        if op == "get_paginator":  # list_inference_components: just the base component
+            res = self.state.setdefault("resources", set())
+            ics = (
+                [{"InferenceComponentName": NAMES.component}]
+                if "inference_component" in res
+                else []
+            )
+            pages = [{"InferenceComponents": ics}]
+            return lambda name: type("P", (), {"paginate": staticmethod(lambda **_: pages)})()
+
         def call(*args: Any, **kw: Any) -> Any:
             if op != "get_waiter":
                 api = self.client.meta.method_to_api_mapping[op]
