@@ -23,7 +23,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [04_structured_output.py](04_structured_output.py) | JSON-schema outputs, `message.parsed()` | DX-10, SI-8 |
 | [05_reasoning.py](05_reasoning.py) | `reasoning_effort`, `reasoning_content` | DX-11, SI-9 |
 | [06_routing_and_tiers.py](06_routing_and_tiers.py) | geo/global/region routing, priority/flex tiers, region pinning | SI-3, SI-10, SE-3 |
-| [07_costs_and_spend_limits.py](07_costs_and_spend_limits.py) | `usage.cost_usd`, session spend, `max_spend_usd` | SI-11, SI-12, OP-1 |
+| [07_costs_and_spend_limits.py](07_costs_and_spend_limits.py) | `usage.cost_usd`, session spend, `max_spend_usd`, actual spend per model, budgets with alerts | SI-11, SI-12, OP-1, OP-4, OP-6 |
 | [08_embeddings_and_rerank.py](08_embeddings_and_rerank.py) | Embeddings for semantic search, then rerank | SI-14, SI-15 |
 | [09_batch_inference.py](09_batch_inference.py) | Discounted batch jobs over 100+ requests | SI-13, SV-9 |
 | [10_prompt_caching.py](10_prompt_caching.py) | Cache a long prompt prefix | SI-21, SV-16 |
@@ -80,6 +80,7 @@ skyhammer eval judge nova-micro --dataset examples/data/eval.jsonl --judge nova-
 skyhammer deployments list | deployments prune --idle-days 7
 skyhammer cleanup                                     # test/smoke leftovers > 6 h (dry run first)
 skyhammer metrics nova-micro --hours 24                # latency, tokens, errors
+skyhammer spend --days 30 | budget create NAME --monthly-usd 50 --email you@x.com
 skyhammer auth api-key                                # short-term Bedrock API key
 skyhammer auth policy > skyhammer-policy.json         # least-privilege IAM for your team
 skyhammer models delete NAME

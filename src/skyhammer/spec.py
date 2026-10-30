@@ -77,6 +77,14 @@ class GuardrailSpec(_Strict):
     max_cost_usd: float | None = None
 
 
+class BudgetSpec(_Strict):
+    """Monthly AWS Budget on the model's tagged spend (training, storage, serving), with
+    email alerts at 80% and 100% of actual and 100% of forecast."""
+
+    monthly_usd: float = Field(gt=0)
+    emails: list[str] = Field(min_length=1)
+
+
 class JobSpec(_Strict):
     api_version: Literal["skyhammer/v1"] = Field(alias="apiVersion")
     kind: Literal["FineTuningJob"]
@@ -94,6 +102,7 @@ class JobSpec(_Strict):
     deploy: DeploySpec = DeploySpec()
     eval: EvalSpec | None = None
     guardrails: GuardrailSpec = GuardrailSpec()
+    budget: BudgetSpec | None = None
     tags: dict[str, str] = {}
 
     @model_validator(mode="after")

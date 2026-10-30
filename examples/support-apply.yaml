@@ -16,4 +16,5 @@ eval:
   dataset: data/eval.jsonl
   graders: [{builtin: contains}]
 guardrails: {max_cost_usd: 1}
+# budget: {monthly_usd: 25, emails: [you@example.com]}   # monthly alerts on this model's spend
 tags: {project: support-bot}

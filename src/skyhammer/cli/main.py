@@ -47,6 +47,7 @@ batch_app = typer.Typer(help="Discounted asynchronous batch inference.", no_args
 auth_app = typer.Typer(help="Bedrock API keys.", no_args_is_help=True)
 eval_app = typer.Typer(help="Score models on a dataset with graders.", no_args_is_help=True)
 deployments_app = typer.Typer(help="Skyhammer-created endpoints/deployments.", no_args_is_help=True)
+budget_app = typer.Typer(help="Monthly budgets with email alerts, per model.", no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(datasets_app, name="datasets")
 app.add_typer(jobs_app, name="jobs")
@@ -54,6 +55,7 @@ app.add_typer(batch_app, name="batch")
 app.add_typer(auth_app, name="auth")
 app.add_typer(deployments_app, name="deployments")
 app.add_typer(eval_app, name="eval")
+app.add_typer(budget_app, name="budget")
 
 console = Console()
 err = Console(stderr=True)
@@ -316,6 +318,11 @@ def apply(
     for note in estimate.notes[1:]:
         console.print(f"    [dim]{note}[/]")
     console.print(f"  deploy: {spec.deploy.type}")
+    if spec.budget:
+        console.print(
+            f"  budget: ${spec.budget.monthly_usd:,.2f}/month, alerts to "
+            + ", ".join(spec.budget.emails)
+        )
     if spec.eval:
         console.print(
             f"  eval: {spec.eval.dataset.name} with " + ", ".join(g.name for g in graders)
@@ -327,6 +334,13 @@ def apply(
 
     job = llm.create_job(spec.technique, ds, max_cost_usd=spec.guardrails.max_cost_usd, **kwargs)
     console.print(f"Job {job.name} ({job.record.backend}, {job.record.region})")
+    if spec.budget:
+        from skyhammer import spend
+
+        budget = spend.create_budget(
+            llm.session, spec.name, spec.budget.monthly_usd, spec.budget.emails
+        )
+        console.print(f"Budget {budget}: ${spec.budget.monthly_usd:,.2f}/month")
     if no_wait:
         console.print(
             f"Submitted. Re-run `skyhammer apply {spec_path}` or "
@@ -756,6 +770,81 @@ def cleanup_cmd(
         typer.confirm(f"Delete {len(found)} resource(s)?", abort=True)
     sweep(session, regions, dry_run=False, **kwargs)
     console.print(f"Deleted {len(found)} resource(s).")
+
+
+@app.command("spend")
+def spend_cmd(
+    days: Annotated[int, typer.Option(help="Look-back window in days")] = 30,
+    by: Annotated[str, typer.Option(help="name | base-model | technique")] = "name",
+    activate: Annotated[
+        bool, typer.Option("--activate", help="Activate Skyhammer's cost allocation tags")
+    ] = False,
+) -> None:
+    """Actual spend per fine-tuned model (or base model / technique) from Cost Explorer."""
+    from skyhammer import spend
+
+    session = Session()
+    if activate:
+        console.print(spend.activate_tags(session))
+        console.print("Tags activated; Cost Explorer shows tagged spend within 24 hours.")
+        return
+    inactive = [k for k, v in spend.tag_status(session).items() if v != "Active"]
+    if inactive:
+        console.print(
+            f"[yellow]Not yet active for cost allocation: {', '.join(inactive)}. "
+            "Run `skyhammer spend --activate` (management account).[/]"
+        )
+    rows = spend.report(session, by=by, days=days)
+    if not rows:
+        console.print(f"No tagged spend in the last {days} days.")
+        return
+    table = Table(by, "USD", "by service")
+    for r in rows:
+        services = ", ".join(
+            f"{k} ${v:,.2f}" for k, v in sorted(r.services.items(), key=lambda x: -x[1])
+        )
+        table.add_row(r.key, f"{r.usd:,.2f}", services)
+    console.print(table)
+    console.print(f"Total ${sum(r.usd for r in rows):,.2f} over {days} days (Cost Explorer)")
+
+
+@budget_app.command("create")
+def budget_create(
+    model: str,
+    monthly_usd: Annotated[float, typer.Option("--monthly-usd", help="Monthly limit")],
+    email: Annotated[list[str], typer.Option(help="Alert recipient (repeatable)")],
+) -> None:
+    """Monthly budget for a model's tagged spend; emails at 80%/100% actual, 100% forecast."""
+    from skyhammer import spend
+
+    name = spend.create_budget(Session(), model, monthly_usd, email)
+    console.print(f"Budget {name}: ${monthly_usd:,.2f}/month, alerts to {', '.join(email)}")
+
+
+@budget_app.command("list")
+def budget_list() -> None:
+    """Skyhammer budgets with this month's actual and forecast spend."""
+    from skyhammer import spend
+
+    table = Table("budget", "limit", "actual", "forecast")
+    for b in spend.list_budgets(Session()):
+        spent = b.get("CalculatedSpend", {})
+        table.add_row(
+            b["BudgetName"],
+            b["BudgetLimit"]["Amount"],
+            spent.get("ActualSpend", {}).get("Amount", "-"),
+            spent.get("ForecastedSpend", {}).get("Amount", "-"),
+        )
+    console.print(table)
+
+
+@budget_app.command("delete")
+def budget_delete(model: str) -> None:
+    """Delete a model's budget."""
+    from skyhammer import spend
+
+    spend.delete_budget(Session(), model)
+    console.print(f"Deleted budget for {model}")
 
 
 @app.command("metrics")

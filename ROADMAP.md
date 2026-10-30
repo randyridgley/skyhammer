@@ -202,9 +202,9 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | OP-1 | Live price lookup + pre-flight estimate | ✅ | M1 | AWS Price List API; cached 7 days |
 | OP-2 | `max_cost_usd` guardrail | ✅ | M1 | Blocks before submit |
 | OP-3 | Cost allocation tags on every resource | ✅ | M0 | `skyhammer:*` + user budget tags |
-| OP-4 | Actual-spend reporting per model/team | ⬜ | M5 | Cost Explorer by `skyhammer:name` tag |
+| OP-4 | Actual-spend reporting per model/team | 🟡 | M5 | `skyhammer spend` / `spend.report()`: Cost Explorer cost grouped by `skyhammer:name` (or base model / technique) and service; `--activate` turns on the cost allocation tags. Live 2026-10-30: tags activated in brimley; report ran (empty until Cost Explorer has tagged data, up to 24 h). 🔴 confirm a non-empty report |
 | OP-5 | Serving metrics (latency, tokens, errors) | ✅ | M4 | `LLM.metrics(hours)` / `skyhammer metrics NAME`: CloudWatch invocations, avg/p50/p99 latency, tokens, client/server errors, throttles, for Bedrock (by invoked ID) and SageMaker inference components. Verified live 2026-10-29 |
-| OP-6 | Alerts / budgets | ⬜ | M5 | AWS Budgets + CloudWatch alarms from specs |
+| OP-6 | Alerts / budgets | ✅ | M5 | `skyhammer budget create|list|delete` and `budget:` in `apply` specs: a monthly AWS Budget on a model's tagged spend with email alerts at 80%/100% actual and 100% forecast. Live 2026-10-30: created, listed with current spend, deleted. (Serverless per-process caps: OP-1/SI-12) |
 | OP-7 | Audit log | ✅ (AWS) | M0 | CloudTrail, no work needed; document it |
 | OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅. Cross-region training route: Qwen3-32B / GPT-OSS-20B RFT through the new bedrock-mantle backend (`backend="mantle"`, us-west-2 only) from any home region. Live 2026-10-30: route, file upload, reward Lambda and job creation work (a batch-size pre-check was added after a free validation failure), but three jobs failed inside AWS with "Training failed due to an internal error" after ~16-20 min without ever invoking the reward Lambda (SigV4 and API-key auth alike; the Lambda works when invoked directly). 🔴 needs an AWS support case before ✅ |
 
@@ -231,7 +231,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | PK-4 | CI (GitHub Actions): lint, types, unit | ✅ | M1.5 | `ci.yml` (3.11–3.13: ruff, mypy, pytest) + `integration.yml` (OIDC, weekly fast + manual slow) |
 | PK-5 | Nightly live smoke + cleanup sweeper | 🟡 | M4 | `skyhammer cleanup` / `sweeper.sweep`: deletes resources named `skyhammer-it-*`/`skyhammer-smoke-*`, tagged `skyhammer:name`, older than 6 h (endpoints, configs, models, jobs, Bedrock models/deployments/imports, guardrails; grader Lambdas only with `--graders` and no RL job running); dry run by default. Live 2026-10-30: dry run on brimley, real delete of a throwaway guardrail. `integration.yml` runs nightly then sweeps, once the `AWS_ROLE_ARN` secret and `SKYHAMMER_NIGHTLY=true` variable are set |
 | PK-6 | Catalog drift detection | ✅ | M3 | Weekly live tier: Bedrock customization IDs, serverless IDs, Hub recipes + EULA gating, recipe keys, prices, and Bedrock import architectures + tokenizers for every public open-weight model |
-| PK-7 | Semver, changelog, PyPI release | ⬜ | M5 | `skyhammer` is available on PyPI |
+| PK-7 | Semver, changelog, PyPI release | 🟡 | M5 | 0.1.0 prepared: single-sourced version, CHANGELOG.md with the semver policy, `release.yml` publishes a `v*` tag with PyPI trusted publishing; wheel and sdist pass `twine check --strict` and a clean install runs. Waiting on the trusted publisher setup on pypi.org, then `git tag v0.1.0` |
 | PK-8 | Backward-compatible manifest schema | ✅ | M3 | `JobRecord.schema_version`; readers ignore unknown fields |
 
 ---
