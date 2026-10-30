@@ -1,0 +1,592 @@
+[
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Prompt cache read input tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "usagetype": "USE1-NovaMicro-cache-read-input-token-count",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Nova Micro",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "ZQ5FR9UVF8V64SX8.JRTCKXETXF": {
+     "priceDimensions": {
+      "ZQ5FR9UVF8V64SX8.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.00000875 per 1K cache read input tokens of Nova Micro in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "ZQ5FR9UVF8V64SX8.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0000087500"
+       }
+      }
+     },
+     "sku": "ZQ5FR9UVF8V64SX8",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "usagetype": "USE1-NovaMicro-input-tokens",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Nova Micro",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "XAR69MSGZSU6FEM9.JRTCKXETXF": {
+     "priceDimensions": {
+      "XAR69MSGZSU6FEM9.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$ 0.000035 per 1K tokens for Nova Micro-input-tokens in us-east-1 (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "XAR69MSGZSU6FEM9.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0000350000"
+       }
+      }
+     },
+     "sku": "XAR69MSGZSU6FEM9",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "Batch Inference",
+    "usagetype": "USE1-NovaMicro-input-tokens-batch",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Nova Micro",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "Z6CR5WMH7Y2J558H.JRTCKXETXF": {
+     "priceDimensions": {
+      "Z6CR5WMH7Y2J558H.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$ 0.0000175 per 1K tokens for Nova Micro-input-tokens in us-east-1 (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "Z6CR5WMH7Y2J558H.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0000175000"
+       }
+      }
+     },
+     "sku": "Z6CR5WMH7Y2J558H",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "Model Customization",
+    "usagetype": "USE1-NovaMicro-input-tokens-custom-model",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Nova Micro",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "TF8TXK4YCEPQBDQN.JRTCKXETXF": {
+     "priceDimensions": {
+      "TF8TXK4YCEPQBDQN.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.000035 per 1K tokens for USE1-NovaMicro-input-tokens-custom-model in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "TF8TXK4YCEPQBDQN.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0000350000"
+       }
+      }
+     },
+     "sku": "TF8TXK4YCEPQBDQN",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Output tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "usagetype": "USE1-NovaMicro-output-tokens",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Nova Micro",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "YUSGHKDUPQRC75RK.JRTCKXETXF": {
+     "priceDimensions": {
+      "YUSGHKDUPQRC75RK.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$ 0.00014 per 1K tokens for Nova Micro-output-tokens in us-east-1 (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "YUSGHKDUPQRC75RK.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0001400000"
+       }
+      }
+     },
+     "sku": "YUSGHKDUPQRC75RK",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "provider": "Qwen",
+    "usagetype": "USE1-Qwen3-32B-input-tokens",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Qwen3 32B",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "5UQHJ7CFUZCUD9UX.JRTCKXETXF": {
+     "priceDimensions": {
+      "5UQHJ7CFUZCUD9UX.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.00015 per 1K input tokens for Qwen3 32B in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "5UQHJ7CFUZCUD9UX.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0001500000"
+       }
+      }
+     },
+     "sku": "5UQHJ7CFUZCUD9UX",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens flex",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "provider": "Qwen",
+    "usagetype": "USE1-Qwen3-32B-input-tokens-flex",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Qwen3 32B",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "GN86NTDH67WJ5SPT.JRTCKXETXF": {
+     "priceDimensions": {
+      "GN86NTDH67WJ5SPT.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.000075 per 1K input tokens flex for Qwen3 32B in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "GN86NTDH67WJ5SPT.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0000750000"
+       }
+      }
+     },
+     "sku": "GN86NTDH67WJ5SPT",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Output tokens",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "provider": "Qwen",
+    "usagetype": "USE1-Qwen3-32B-output-tokens",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Qwen3 32B",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "RA2QAWYCCM9R5BR6.JRTCKXETXF": {
+     "priceDimensions": {
+      "RA2QAWYCCM9R5BR6.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.0006 per 1K output tokens for Qwen3 32B in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "RA2QAWYCCM9R5BR6.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0006000000"
+       }
+      }
+     },
+     "sku": "RA2QAWYCCM9R5BR6",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Output tokens flex",
+    "servicecode": "AmazonBedrock",
+    "feature": "On-demand Inference",
+    "provider": "Qwen",
+    "usagetype": "USE1-Qwen3-32B-output-tokens-flex",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Qwen3 32B",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "MPW67DV43V4NBBGH.JRTCKXETXF": {
+     "priceDimensions": {
+      "MPW67DV43V4NBBGH.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.0003 per 1K output tokens flex for Qwen3 32B in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "MPW67DV43V4NBBGH.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0003000000"
+       }
+      }
+     },
+     "sku": "MPW67DV43V4NBBGH",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "servicecode": "AmazonBedrock",
+    "provider": "Qwen",
+    "usagetype": "USE1-qwen.qwen3-32b-mantle-input-tokens-standard",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Qwen3 32B",
+    "service_tier": "standard",
+    "servicename": "Amazon Bedrock",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "U6WAJF7G3M4RQS3M.JRTCKXETXF": {
+     "priceDimensions": {
+      "U6WAJF7G3M4RQS3M.JRTCKXETXF.6YS6EN2CT7": {
+       "unit": "1K tokens",
+       "endRange": "Inf",
+       "description": "$0.00015 per 1K token for qwen.qwen3-32b-mantle-input-tokens-standard in US East (N. Virginia)",
+       "appliesTo": [],
+       "rateCode": "U6WAJF7G3M4RQS3M.JRTCKXETXF.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0001500000"
+       }
+      }
+     },
+     "sku": "U6WAJF7G3M4RQS3M",
+     "effectiveDate": "2026-10-01T00:00:00Z",
+     "offerTermCode": "JRTCKXETXF",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "feature": "On-demand Inference",
+    "provider": "Anthropic",
+    "usagetype": "USE1-MP:USE1_InputTokenCount-Units",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Claude Haiku 4.5",
+    "servicename": "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "JQDUC8Q4K8C6GSGH.4799GE89SK": {
+     "priceDimensions": {
+      "JQDUC8Q4K8C6GSGH.4799GE89SK.6YS6EN2CT7": {
+       "unit": "1M tokens",
+       "endRange": "Inf",
+       "description": "AWS Marketplace software usage|us-east-1|Million Input Tokens Regional",
+       "appliesTo": [],
+       "rateCode": "JQDUC8Q4K8C6GSGH.4799GE89SK.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "1.1000000000"
+       }
+      }
+     },
+     "sku": "JQDUC8Q4K8C6GSGH",
+     "effectiveDate": "2026-09-01T00:00:00Z",
+     "offerTermCode": "4799GE89SK",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "feature": "On-demand Inference",
+    "provider": "Anthropic",
+    "usagetype": "USE1-MP:USE1_InputTokenCount_Global-Units",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Claude Haiku 4.5",
+    "servicename": "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "DY4B4Q3TRTAY8V6G.4799GE89SK": {
+     "priceDimensions": {
+      "DY4B4Q3TRTAY8V6G.4799GE89SK.6YS6EN2CT7": {
+       "unit": "1M tokens",
+       "endRange": "Inf",
+       "description": "AWS Marketplace software usage|us-east-1|Million Input Tokens Global",
+       "appliesTo": [],
+       "rateCode": "DY4B4Q3TRTAY8V6G.4799GE89SK.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "1.0000000000"
+       }
+      }
+     },
+     "sku": "DY4B4Q3TRTAY8V6G",
+     "effectiveDate": "2026-09-01T00:00:00Z",
+     "offerTermCode": "4799GE89SK",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Output tokens",
+    "feature": "On-demand Inference",
+    "provider": "Anthropic",
+    "usagetype": "USE1-MP:USE1_OutputTokenCount-Units",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Claude Haiku 4.5",
+    "servicename": "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "X629GDA2GXAP6R54.4799GE89SK": {
+     "priceDimensions": {
+      "X629GDA2GXAP6R54.4799GE89SK.6YS6EN2CT7": {
+       "unit": "1M tokens",
+       "endRange": "Inf",
+       "description": "AWS Marketplace software usage|us-east-1|Million Response Tokens Regional",
+       "appliesTo": [],
+       "rateCode": "X629GDA2GXAP6R54.4799GE89SK.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "5.5000000000"
+       }
+      }
+     },
+     "sku": "X629GDA2GXAP6R54",
+     "effectiveDate": "2026-09-01T00:00:00Z",
+     "offerTermCode": "4799GE89SK",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Output tokens",
+    "feature": "On-demand Inference",
+    "provider": "Anthropic",
+    "usagetype": "USE1-MP:USE1_OutputTokenCount_Global-Units",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Claude Haiku 4.5",
+    "servicename": "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "XADKFYXVGBFBJSU7.4799GE89SK": {
+     "priceDimensions": {
+      "XADKFYXVGBFBJSU7.4799GE89SK.6YS6EN2CT7": {
+       "unit": "1M tokens",
+       "endRange": "Inf",
+       "description": "AWS Marketplace software usage|us-east-1|Million Response Tokens Global",
+       "appliesTo": [],
+       "rateCode": "XADKFYXVGBFBJSU7.4799GE89SK.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "5.0000000000"
+       }
+      }
+     },
+     "sku": "XADKFYXVGBFBJSU7",
+     "effectiveDate": "2026-09-01T00:00:00Z",
+     "offerTermCode": "4799GE89SK",
+     "termAttributes": {}
+    }
+   }
+  }
+ },
+ {
+  "product": {
+   "attributes": {
+    "regionCode": "us-east-1",
+    "inferenceType": "Input tokens",
+    "feature": "Provisioned Throughput Inference",
+    "provider": "Anthropic",
+    "usagetype": "USE1-MP:USE1_Reserved_1Month_InputTPM_Geo-Units",
+    "locationType": "AWS Region",
+    "location": "US East (N. Virginia)",
+    "model": "Claude Haiku 4.5",
+    "servicename": "Claude Haiku 4.5 (Amazon Bedrock Edition)",
+    "operation": ""
+   }
+  },
+  "terms": {
+   "OnDemand": {
+    "WFDJPN3RNP3N6NWZ.4799GE89SK": {
+     "priceDimensions": {
+      "WFDJPN3RNP3N6NWZ.4799GE89SK.6YS6EN2CT7": {
+       "unit": "1M TPM Hour",
+       "endRange": "Inf",
+       "description": "AWS Marketplace software usage|us-east-1|Per Hour per 1K Input TPM Reserved 1 Month Regional",
+       "appliesTo": [],
+       "rateCode": "WFDJPN3RNP3N6NWZ.4799GE89SK.6YS6EN2CT7",
+       "beginRange": "0",
+       "pricePerUnit": {
+        "USD": "0.0660000000"
+       }
+      }
+     },
+     "sku": "WFDJPN3RNP3N6NWZ",
+     "effectiveDate": "2026-09-01T00:00:00Z",
+     "offerTermCode": "4799GE89SK",
+     "termAttributes": {}
+    }
+   }
+  }
+ }
+]

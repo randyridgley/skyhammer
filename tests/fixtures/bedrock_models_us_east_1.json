@@ -1,0 +1,384 @@
+{
+ "modelSummaries": [
+  {
+   "modelId": "anthropic.claude-haiku-4-5-20251001-v1:0",
+   "modelName": "Claude Haiku 4.5",
+   "providerName": "Anthropic",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "anthropic.claude-sonnet-4-6",
+   "modelName": "Claude Sonnet 4.6",
+   "providerName": "Anthropic",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "amazon.nova-2-lite-v1:0",
+   "modelName": "Nova 2 Lite",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE",
+    "VIDEO"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "mistral.mistral-large-3-675b-instruct",
+   "modelName": "Mistral Large 3",
+   "providerName": "Mistral AI",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ]
+  },
+  {
+   "modelId": "qwen.qwen3-32b-v1:0",
+   "modelName": "Qwen3 32B (dense)",
+   "providerName": "Qwen",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ]
+  },
+  {
+   "modelId": "openai.gpt-oss-20b-1:0",
+   "modelName": "gpt-oss-20b",
+   "providerName": "OpenAI",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ]
+  },
+  {
+   "modelId": "stability.stable-image-inpaint-v1:0",
+   "modelName": "Stable Image Inpaint",
+   "providerName": "Stability AI",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "IMAGE"
+   ],
+   "responseStreamingSupported": false,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "cohere.embed-v4:0",
+   "modelName": "Embed v4",
+   "providerName": "Cohere",
+   "inputModalities": [
+    "TEXT",
+    "IMAGE"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": false,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND",
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "amazon.nova-micro-v1:0:128k",
+   "modelName": "Nova Micro",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [
+    "FINE_TUNING",
+    "DISTILLATION"
+   ],
+   "inferenceTypesSupported": [
+    "PROVISIONED"
+   ]
+  },
+  {
+   "modelId": "amazon.nova-micro-v1:0",
+   "modelName": "Nova Micro",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND",
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "amazon.titan-embed-text-v2:0",
+   "modelName": "Titan Text Embeddings V2",
+   "providerName": "Amazon",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "EMBEDDING"
+   ],
+   "responseStreamingSupported": false,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ]
+  },
+  {
+   "modelId": "cohere.rerank-v3-5:0",
+   "modelName": "Rerank 3.5",
+   "providerName": "Cohere",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": false,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "ON_DEMAND"
+   ]
+  },
+  {
+   "modelId": "deepseek.r1-v1:0",
+   "modelName": "DeepSeek-R1",
+   "providerName": "DeepSeek",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "meta.llama3-1-8b-instruct-v1:0",
+   "modelName": "Llama 3.1 8B Instruct",
+   "providerName": "Meta",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  },
+  {
+   "modelId": "meta.llama3-3-70b-instruct-v1:0",
+   "modelName": "Llama 3.3 70B Instruct",
+   "providerName": "Meta",
+   "inputModalities": [
+    "TEXT"
+   ],
+   "outputModalities": [
+    "TEXT"
+   ],
+   "responseStreamingSupported": true,
+   "customizationsSupported": [],
+   "inferenceTypesSupported": [
+    "INFERENCE_PROFILE"
+   ]
+  }
+ ],
+ "inferenceProfileSummaries": [
+  {
+   "inferenceProfileId": "us.meta.llama3-1-8b-instruct-v1:0",
+   "inferenceProfileName": "US Meta Llama 3.1 8B Instruct",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/meta.llama3-1-8b-instruct-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/meta.llama3-1-8b-instruct-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/meta.llama3-1-8b-instruct-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.meta.llama3-3-70b-instruct-v1:0",
+   "inferenceProfileName": "US Meta Llama 3.3 70B Instruct",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/meta.llama3-3-70b-instruct-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/meta.llama3-3-70b-instruct-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/meta.llama3-3-70b-instruct-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.deepseek.r1-v1:0",
+   "inferenceProfileName": "US DeepSeek-R1",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/deepseek.r1-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/deepseek.r1-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/deepseek.r1-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.stability.stable-image-inpaint-v1:0",
+   "inferenceProfileName": "US Stable Image Inpaint",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-inpaint-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/stability.stable-image-inpaint-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/stability.stable-image-inpaint-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.cohere.embed-v4:0",
+   "inferenceProfileName": "US Cohere Embed v4",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/cohere.embed-v4:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/cohere.embed-v4:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "global.cohere.embed-v4:0",
+   "inferenceProfileName": "Global Cohere Embed v4",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:::foundation-model/cohere.embed-v4:0",
+    "arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "global.amazon.nova-2-lite-v1:0",
+   "inferenceProfileName": "GLOBAL Amazon Nova 2 Lite",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:::foundation-model/amazon.nova-2-lite-v1:0",
+    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.amazon.nova-micro-v1:0",
+   "inferenceProfileName": "US Nova Micro",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-micro-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-micro-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.amazon.nova-2-lite-v1:0",
+   "inferenceProfileName": "US Amazon Nova 2 Lite",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-lite-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-2-lite-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-2-lite-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "inferenceProfileName": "Global Anthropic Claude Haiku 4.5",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "inferenceProfileName": "US Anthropic Claude Haiku 4.5",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+    "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+    "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+   ]
+  },
+  {
+   "inferenceProfileId": "global.anthropic.claude-sonnet-4-6",
+   "inferenceProfileName": "Global Anthropic Claude Sonnet 4.6",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:::foundation-model/anthropic.claude-sonnet-4-6",
+    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6"
+   ]
+  },
+  {
+   "inferenceProfileId": "us.anthropic.claude-sonnet-4-6",
+   "inferenceProfileName": "US Anthropic Claude Sonnet 4.6",
+   "type": "SYSTEM_DEFINED",
+   "models": [
+    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
+    "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
+    "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6"
+   ]
+  }
+ ]
+}

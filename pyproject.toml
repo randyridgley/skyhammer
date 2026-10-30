@@ -1,0 +1,76 @@
+[project]
+name = "skyhammer"
+version = "0.0.1"
+description = "Forge, tune and call models on AWS, without the heavy lifting."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["aws", "amazon-bedrock", "sagemaker", "fine-tuning", "llm", "rag", "openai-compatible"]
+requires-python = ">=3.11"
+dependencies = [
+    "boto3>=1.43",  # ServerlessJobConfig (SageMaker serverless customization)
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+tokenizers = ["tokenizers>=0.20", "huggingface-hub>=0.24"]
+openai = ["openai>=1.40"]
+hf = ["datasets>=2.20"]
+pandas = ["pandas>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/randyridgley/skyhammer"
+Documentation = "https://randyridgley.github.io/skyhammer/"
+Repository = "https://github.com/randyridgley/skyhammer"
+Issues = "https://github.com/randyridgley/skyhammer/issues"
+
+[project.scripts]
+skyhammer = "skyhammer.cli.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "moto[s3,iam,cloudformation,sts]>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[bedrock,bedrock-runtime,s3,cloudformation,sagemaker,lambda]>=1.40",
+    "types-pyyaml",
+    "openai>=1.40",
+    "tokenizers>=0.20",
+    "huggingface-hub>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skyhammer"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["datasets", "datasets.*", "pandas", "pandas.*", "tokenizers", "huggingface_hub"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "aws: integration tests that hit real AWS (set SKYHAMMER_INTEGRATION=1)",
+    "slow: trains real models, 30-60 min and cents of spend (also set SKYHAMMER_INTEGRATION_SLOW=1)",
+]

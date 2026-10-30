@@ -1,0 +1,42 @@
+name: integration
+
+# Live AWS tests. Requires an IAM role trusted for GitHub OIDC (repo secret AWS_ROLE_ARN)
+# in an account where `skyhammer bootstrap` has been run.
+on:
+  workflow_dispatch:
+    inputs:
+      slow:
+        description: "Also run training tests (30-60 min each, cents of spend)"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 9 * * 1"  # weekly fast drift check (catalog, Hub recipes, prices)
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: uv sync --locked
+      - name: Live tests
+        env:
+          SKYHAMMER_INTEGRATION: "1"
+          SKYHAMMER_INTEGRATION_SLOW: ${{ inputs.slow && '1' || '0' }}
+        run: uv run pytest -q tests/integration

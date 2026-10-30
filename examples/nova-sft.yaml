@@ -1,0 +1,15 @@
+apiVersion: skyhammer/v1
+kind: FineTuningJob
+name: support-nova-v1
+base_model: nova-micro
+technique: sft
+dataset:
+  path: data/train.jsonl
+  validation_split: 0.05
+  auto_fix: true
+hyperparameters:
+  epochs: 3
+  learning_rate: 0.00001
+deploy: {type: on_demand}
+guardrails: {max_cost_usd: 100}
+tags: {project: support-bot}

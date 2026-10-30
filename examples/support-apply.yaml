@@ -1,0 +1,19 @@
+# Train, deploy and evaluate in one idempotent command:
+#   uv run skyhammer apply examples/support-apply.yaml --plan   # route + live cost, no spend
+#   uv run skyhammer apply examples/support-apply.yaml          # do it (re-run to resume)
+apiVersion: skyhammer/v1
+kind: FineTuningJob
+name: support-nova-apply
+base_model: nova-micro
+technique: sft
+dataset:
+  path: data/train.jsonl
+  auto_fix: true
+hyperparameters:
+  epochs: 2
+deploy: {type: on_demand}
+eval:
+  dataset: data/eval.jsonl
+  graders: [{builtin: contains}]
+guardrails: {max_cost_usd: 1}
+tags: {project: support-bot}

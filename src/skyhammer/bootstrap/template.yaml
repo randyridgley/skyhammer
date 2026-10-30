@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: skyhammer bootstrap resources (bucket, KMS key, service roles)
+
+Parameters:
+  ExistingKmsKeyArn:
+    Type: String
+    Default: ""
+    Description: Use this customer-managed KMS key instead of creating one.
+
+Conditions:
+  CreateKey: !Equals [!Ref ExistingKmsKeyArn, ""]
+
+Resources:
+  Key:
+    Type: AWS::KMS::Key
+    Condition: CreateKey
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: skyhammer data and custom model encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdmin
+            Effect: Allow
+            Principal: {AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"}
+            Action: "kms:*"
+            Resource: "*"
+          # Bedrock model evaluation jobs use the key directly (not via the job's role).
+          - Sid: BedrockEvaluationJobs
+            Effect: Allow
+            Principal: {Service: bedrock.amazonaws.com}
+            Action: [kms:GenerateDataKey, kms:Decrypt]
+            Resource: "*"
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:evaluationJobArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*"
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*"
+          - Sid: BedrockEvaluationJobsDescribeKey
+            Effect: Allow
+            Principal: {Service: bedrock.amazonaws.com}
+            Action: kms:DescribeKey
+            Resource: "*"
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*"
+
+  KeyAlias:
+    Type: AWS::KMS::Alias
+    Condition: CreateKey
+    Properties:
+      AliasName: alias/skyhammer
+      TargetKeyId: !Ref Key
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "skyhammer-${AWS::AccountId}-${AWS::Region}"
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt Bucket.Arn, !Sub "${Bucket.Arn}/*"]
+            Condition: {Bool: {aws:SecureTransport: "false"}}
+
+  DataAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Read datasets/models and write job outputs in the skyhammer bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [s3:GetObject, s3:ListBucket, s3:GetBucketLocation]
+            Resource: [!GetAtt Bucket.Arn, !Sub "${Bucket.Arn}/*"]
+          - Effect: Allow
+            Action: [s3:PutObject]
+            Resource: [!Sub "${Bucket.Arn}/jobs/*", !Sub "${Bucket.Arn}/models/*",
+                       !Sub "${Bucket.Arn}/batch/*", !Sub "${Bucket.Arn}/evals/*"]
+          - Effect: Allow
+            Action: [kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey, kms:CreateGrant]
+            Resource: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]
+
+  BedrockCustomizationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      ManagedPolicyArns: [!Ref DataAccessPolicy]
+      Policies:
+        - PolicyName: invoke-graders-and-teachers
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:skyhammer-grader-*"
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:CreateModelInvocationJob, bedrock:GetInferenceProfile]
+                Resource: "*"
+
+  SageMakerTrainingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: sagemaker.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns: [!Ref DataAccessPolicy]
+      Policies:
+        - PolicyName: training-runtime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents,
+                         cloudwatch:PutMetricData]
+                Resource: "*"
+              - Effect: Allow
+                Action: [lambda:InvokeFunction]
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:skyhammer-grader-*"
+              # Hosting: pull AWS Deep Learning Containers and read JumpStart base artifacts.
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action: [ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability]
+                Resource: !Sub "arn:${AWS::Partition}:ecr:${AWS::Region}:763104351884:repository/*"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:ListBucket]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::jumpstart-cache-prod-${AWS::Region}"
+                  - !Sub "arn:${AWS::Partition}:s3:::jumpstart-cache-prod-${AWS::Region}/*"
+              - Effect: Allow
+                Action: [sagemaker:CreateModelPackage, sagemaker:CreateModelPackageGroup,
+                         sagemaker:DescribeModelPackageGroup, sagemaker:DescribeModelPackage,
+                         sagemaker:DescribeHubContent]
+                Resource: "*"
+              # Log training metrics to MLflow when skyhammer's mlflow_arn is set.
+              - Effect: Allow
+                Action: "sagemaker-mlflow:*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-app/*"
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-tracking-server/*"
+
+  ModelImportRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: bedrock.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      ManagedPolicyArns: [!Ref DataAccessPolicy]
+
+  GraderLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+Outputs:
+  BucketName: {Value: !Ref Bucket}
+  KmsKeyArn: {Value: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]}
+  BedrockCustomizationRoleArn: {Value: !GetAtt BedrockCustomizationRole.Arn}
+  SageMakerTrainingRoleArn: {Value: !GetAtt SageMakerTrainingRole.Arn}
+  ModelImportRoleArn: {Value: !GetAtt ModelImportRole.Arn}
+  GraderLambdaRoleArn: {Value: !GetAtt GraderLambdaRole.Arn}
