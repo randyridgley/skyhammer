@@ -234,11 +234,12 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package/*"
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package-group/*"
+              # Read-only; SageMaker checks it against a hub-content ARN that resource
+              # patterns don't match ("Access denied to hub content ... /null", live
+              # 2026-10-30), so it stays on "*".
               - Effect: Allow
                 Action: sagemaker:DescribeHubContent
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:aws:hub-content/*"
-                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:hub-content/*"
+                Resource: "*"
               # Log training metrics to MLflow when skyhammer's mlflow_arn is set.
               - Effect: Allow
                 Action: "sagemaker-mlflow:*"
