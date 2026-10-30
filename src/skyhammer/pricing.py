@@ -57,7 +57,7 @@ class TrainingPrice:
 
 def usage_type(route: Route, technique: Technique, training_type: TrainingType) -> str | None:
     prefix = _REGION_PREFIX.get(route.region)
-    if prefix is None:
+    if prefix is None or route.backend is BackendKind.MANTLE:  # not in the Price List yet
         return None
     if route.backend is BackendKind.BEDROCK:
         # Open-weight Bedrock customization (Qwen, GPT-OSS) isn't in the Price List yet.

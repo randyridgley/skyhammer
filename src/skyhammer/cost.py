@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 # Epochs assumed when the user doesn't set them. SageMaker recipes default to 5 (from the
 # Hub override params); TODO(M1): confirm Bedrock's default from a real job.
-DEFAULT_EPOCHS = {"bedrock": 2, "sagemaker": 5}
+DEFAULT_EPOCHS = {"bedrock": 2, "sagemaker": 5, "mantle": 1}  # mantle: "auto" in the API
 # Runtime cap for time-billed (RL) jobs when the caller doesn't set max_hours.
 DEFAULT_RL_MAX_HOURS = 4.0
 
@@ -45,6 +45,8 @@ class CostEstimate:
                 f"billed by time at ${self.usd_per_hour:,.2f}/hour, at most "
                 f"${self.usd:,.2f} (stops after {self.max_hours:g}h)"
             )
+        if self.usd_per_hour is not None:  # time-billed with no runtime cap (Bedrock RFT)
+            return f"billed by time at ${self.usd_per_hour:,.2f}/hour, no runtime cap"
         cost = f"${self.usd:,.4f}" if self.usd is not None else "unknown (no price data)"
         return f"~{self.training_tokens:,} training tokens, estimated {cost}"
 

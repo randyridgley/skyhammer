@@ -1244,6 +1244,10 @@ class _Completions:
                 Accept="application/json",
             )
             return from_openai_chat_response(chat.model_id, json.loads(resp["Body"].read()))
+        if chat.api == "mantle":  # bedrock-mantle (OpenAI-compatible) fine-tuned models
+            body = {"model": chat.model_id, **to_openai_chat_body(messages, **params)}
+            resp = chat.runtime.request("POST", "/v1/chat/completions", json_body=body)
+            return from_openai_chat_response(chat.model_id, resp)
         if chat.api == "openai_chat":
             resp = chat.runtime.invoke_model(
                 modelId=chat.model_id,
@@ -1259,6 +1263,16 @@ class _Completions:
 
     def _stream(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> Stream:
         chat = self._chat
+        if chat.api == "mantle":  # one buffered chunk: the client doesn't parse SSE yet
+            done = self._once(messages, params)
+            choice = done.choices[0]
+            delta = Delta(
+                "assistant", choice.message.content, None, choice.message.reasoning_content
+            )
+            chunk = ChatCompletionChunk(
+                done.id, done.model, [ChunkChoice(0, delta, choice.finish_reason)], done.usage
+            )
+            return Stream(done.model, iter([chunk]))
         if chat.api == "sagemaker":
             body = to_openai_chat_body(messages, **params) | {"stream": True}
             resp = chat.runtime.invoke_endpoint_with_response_stream(
@@ -1328,7 +1342,8 @@ class _TextCompletions:
 
 class Chat:
     """OpenAI-style ``chat.completions.create``. ``api`` is "converse" (Bedrock-native custom
-    and base models) or "openai_chat" (imported models, via InvokeModel)."""
+    and base models), "openai_chat" (imported models, via InvokeModel), "sagemaker"
+    (endpoints) or "mantle" (bedrock-mantle fine-tunes; ``runtime`` is a MantleClient)."""
 
     def __init__(
         self,

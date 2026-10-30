@@ -21,7 +21,7 @@ from skyhammer.catalog import (
 )
 from skyhammer.errors import UnsupportedRouteError
 
-_BACKENDS = (BackendKind.BEDROCK, BackendKind.SAGEMAKER)
+_BACKENDS = (BackendKind.BEDROCK, BackendKind.SAGEMAKER, BackendKind.MANTLE)
 _SERVING = (ServingTarget.BEDROCK, ServingTarget.SAGEMAKER)
 
 
@@ -63,6 +63,9 @@ def _region_order(
 def _serving_problem(
     model: ModelEntry, cap: Capability, region: str, target: ServingTarget
 ) -> str | None:
+    if cap.backend is BackendKind.MANTLE:
+        # Fine-tuned models are called on demand through bedrock-mantle where they trained.
+        return None if target is ServingTarget.BEDROCK else "bedrock-mantle models serve on Bedrock"
     if target is ServingTarget.SAGEMAKER:
         if cap.backend is not BackendKind.SAGEMAKER:
             return "only SageMaker-trained weights can be served from a SageMaker endpoint"

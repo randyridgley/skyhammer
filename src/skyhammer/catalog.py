@@ -23,6 +23,7 @@ class Technique(StrEnum):
 class BackendKind(StrEnum):
     BEDROCK = "bedrock"
     SAGEMAKER = "sagemaker"
+    MANTLE = "mantle"  # Bedrock's OpenAI-compatible fine-tuning API (bedrock-mantle)
 
 
 class TrainingType(StrEnum):
@@ -117,6 +118,12 @@ def _bedrock(
         regions=regions,
         backend_model_id=model_id,
         on_demand=on_demand,
+    )
+
+
+def _mantle(technique: Technique, model_id: str, regions: frozenset[str]) -> Capability:
+    return Capability(
+        backend=BackendKind.MANTLE, technique=technique, regions=regions, backend_model_id=model_id
     )
 
 
@@ -233,7 +240,10 @@ CATALOG: dict[str, ModelEntry] = {
                 # Bedrock RFT of Qwen3-32B runs only through the OpenAI-compatible
                 # fine-tuning API (bedrock-mantle), not CreateModelCustomizationJob, which
                 # rejects it ("model identifier is invalid", live 2026-10-30).
-                capabilities=_sm(_SM_ALL, f"huggingface-reasoning-qwen3-{sm_size}"),
+                capabilities=[
+                    *([_mantle(Technique.RFT, "qwen.qwen3-32b", _W2)] if size == "32b" else []),
+                    *_sm(_SM_ALL, f"huggingface-reasoning-qwen3-{sm_size}"),
+                ],
                 bedrock_serving_regions=_CMI,
             )
             for size, sm_size in [
@@ -271,7 +281,10 @@ CATALOG: dict[str, ModelEntry] = {
             family="gpt-oss",
             display_name="GPT-OSS 20B",
             # Bedrock RFT of GPT-OSS is OpenAI-compatible-API only (see Qwen3-32B above).
-            capabilities=_sm(_SM_ALL, "openai-reasoning-gpt-oss-20b"),
+            capabilities=[
+                _mantle(Technique.RFT, "openai.gpt-oss-20b", _W2),
+                *_sm(_SM_ALL, "openai-reasoning-gpt-oss-20b"),
+            ],
             bedrock_serving_regions=_E1,  # GPT-OSS import is us-east-1 only
         ),
         # Not importable into Bedrock (architecture unsupported): served from SageMaker.

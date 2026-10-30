@@ -338,7 +338,7 @@ class LLM:
         if price.usd_per_hour is not None or technique is Technique.RFT:
             if route.backend is not BackendKind.SAGEMAKER and max_hours is not None:
                 raise UnsupportedParameterError("max_hours applies to SageMaker RL jobs only")
-            if route.backend is BackendKind.BEDROCK:
+            if route.backend in (BackendKind.BEDROCK, BackendKind.MANTLE):
                 log.warning(
                     "Bedrock RFT is billed by training time%s and has no runtime cap; "
                     "keep epochs and prompts small, and job.cancel() stops it",
@@ -617,8 +617,10 @@ class LLM:
         if self.deployment:
             return self.deployment.arn
         if self.model_ref:
-            if self.model_ref.api == "openai_chat" and self.model_ref.serving != "sagemaker":
-                return self.model_ref.model_arn  # imported models are invoked directly
+            if self.model_ref.api in ("openai_chat", "mantle") and (
+                self.model_ref.serving != "sagemaker"
+            ):
+                return self.model_ref.model_arn  # imported/mantle models are invoked directly
             raise SkyhammerError(f"{self.model_ref.name} must be deployed first: call .deploy()")
         # Base/serverless model: the inference profile or model ID per routing policy.
         if self.deployment_type == "dedicated":
@@ -640,8 +642,8 @@ class LLM:
     def _record_usage(self, model_id: str, usage: Usage, tier: str | None) -> None:
         """Fill usage.cost_usd from live prices and add it to the session's spend."""
         if self.session.settings.track_costs and not (
-            self.model_ref and self.model_ref.api == "openai_chat"
-        ):  # imports bill per CMU
+            self.model_ref and self.model_ref.api in ("openai_chat", "mantle")
+        ):  # imports bill per CMU; mantle fine-tunes aren't in the Price List
             try:
                 usage.cost_usd = InferencePrices.for_session(self.session).cost(
                     self.info.name,
@@ -834,6 +836,17 @@ class LLM:
             )
         region = self.model_ref.region if self.model_ref else None
         model_id = self.model_id
+        if self.model_ref and self.model_ref.api == "mantle":
+            from skyhammer.mantle import MantleClient
+
+            return Chat(
+                MantleClient(self.session, self.model_ref.region),
+                model_id,
+                api="mantle",
+                on_usage=lambda usage, tier: self._record_usage(model_id, usage, tier),
+                before_call=self.session.spend.check,
+                guardrail_runtime=self.session.client("bedrock-runtime", region=region),
+            )
         return Chat(
             self.session.client("bedrock-runtime", region=region),
             model_id,

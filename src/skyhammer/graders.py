@@ -158,11 +158,15 @@ class Grader:
         lam.get_waiter("function_active_v2").wait(FunctionName=name)
         return Grader.from_lambda(arn, name=self.name)
 
-    def delete(self, session: Any = None) -> None:
-        """Delete this grader's Lambda (deployed Python graders only)."""
+    def delete(self, session: Any = None, *, region: str | None = None) -> None:
+        """Delete this grader's Lambdas (deployed Python graders only) in ``region``: the
+        training region they were deployed to (default: the session's).
+
+        Jobs with the same grader code share one Lambda, so only delete it once every RL job
+        using it has finished; a job still training loses its reward function."""
         from skyhammer.session import get_session
 
-        lam = (session or get_session()).client("lambda")
+        lam = (session or get_session()).client("lambda", region=region)
         for contract in ("sagemaker", "bedrock"):
             with contextlib.suppress(lam.exceptions.ResourceNotFoundException):
                 lam.delete_function(FunctionName=self.function_name_for(contract))

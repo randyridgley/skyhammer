@@ -206,7 +206,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | OP-5 | Serving metrics (latency, tokens, errors) | ✅ | M4 | `LLM.metrics(hours)` / `skyhammer metrics NAME`: CloudWatch invocations, avg/p50/p99 latency, tokens, client/server errors, throttles, for Bedrock (by invoked ID) and SageMaker inference components. Verified live 2026-10-29 |
 | OP-6 | Alerts / budgets | ⬜ | M5 | AWS Budgets + CloudWatch alarms from specs |
 | OP-7 | Audit log | ✅ (AWS) | M0 | CloudTrail, no work needed; document it |
-| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅; 🔴 live cross-region run. No cross-region training route exists today: Bedrock RFT of Qwen3-32B / GPT-OSS (us-west-2) is only offered through the OpenAI-compatible fine-tuning API (bedrock-mantle), not `CreateModelCustomizationJob` (rejected live 2026-10-30), so those routes were removed; Llama Bedrock SFT (us-west-2) needs provisioned throughput to serve. Next: a bedrock-mantle backend |
+| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅. Cross-region training route: Qwen3-32B / GPT-OSS-20B RFT through the new bedrock-mantle backend (`backend="mantle"`, us-west-2 only) from any home region. Live 2026-10-30: route, file upload, reward Lambda and job creation work (a batch-size pre-check was added after a free validation failure), but three jobs failed inside AWS with "Training failed due to an internal error" after ~16-20 min without ever invoking the reward Lambda (SigV4 and API-key auth alike; the Lambda works when invoked directly). 🔴 needs an AWS support case before ✅ |
 
 ### 2.8 Security and enterprise
 
@@ -264,8 +264,8 @@ schemas, and text tool-call recovery. SI-13 batch verified live (100/100).
 Verified live 2026-10-29: SV-4/5/6/13 SageMaker endpoints (deploy 8 min, scale to zero after
 23 min idle, 11 min cold start, move to Bedrock), TR-6 Nova distillation, TR-7 open-weight
 distillation, EV-6 managed eval jobs, EV-7, DA-6 tokenizer counts, DA-7, DA-8 lineage,
-PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: EV-9 MLflow mirroring, OP-8 live cross-region (needs a bedrock-mantle
-backend). Verified live 2026-10-30: DA-3, SI-19, SI-20, SI-22, SV-17, SV-18, TR-3, TR-18.
+PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: EV-9 MLflow mirroring, OP-8 live cross-region (bedrock-mantle backend built;
+AWS-side training failure under investigation). Verified live 2026-10-30: DA-3, SI-19, SI-20, SI-22, SV-17, SV-18, TR-3, TR-18.
 
 ### M4: preference and RL training, production serving (in progress)
 Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python reward

@@ -112,3 +112,11 @@ def test_price_units_parsed(monkeypatch: pytest.MonkeyPatch, session: object) ->
     monkeypatch.setattr(pricing, "_lookup", lambda *a: {"unit": "Hours", "usd": 80.0})
     p = pricing.training_price(session, route, Technique.RFT, TrainingType.LORA)  # type: ignore[arg-type]
     assert p.usd_per_hour == 80.0
+
+
+def test_uncapped_time_billed_estimate_shows_the_rate() -> None:
+    from skyhammer.cost import CostEstimate
+
+    est = CostEstimate(1000, None, usd_per_hour=80.0)
+    assert est.usd is None
+    assert str(est) == "billed by time at $80.00/hour, no runtime cap"

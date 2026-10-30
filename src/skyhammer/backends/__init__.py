@@ -15,6 +15,10 @@ def get_backend(kind: BackendKind, session: Session, region: str | None = None) 
         from skyhammer.backends.bedrock import BedrockNativeBackend
 
         return BedrockNativeBackend(session, region)
+    if kind is BackendKind.MANTLE:
+        from skyhammer.backends.mantle import BedrockMantleBackend
+
+        return BedrockMantleBackend(session, region)
     from skyhammer.backends.sagemaker import SageMakerServerlessBackend
 
     return SageMakerServerlessBackend(session, region)
