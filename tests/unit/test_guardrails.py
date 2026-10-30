@@ -173,3 +173,26 @@ def test_extra_body_cant_swap_the_checked_messages() -> None:
             guardrail={"id": "gr1"},
             extra_body={"messages": [{"role": "user", "content": "Which stocks?"}]},
         )
+
+
+def test_masking_outputs_are_never_shown() -> None:
+    from skyhammer.inference import WITHHELD_MESSAGE, _blocked_message
+
+    # PII masking returns one output per checked block (here: the system prompt and the
+    # reasoning); joining them would leak them, masked or not.
+    masked = {
+        "action": "GUARDRAIL_INTERVENED",
+        "outputs": [
+            {"text": "Secret system prompt for {NAME}"},
+            {"text": "reasoning about {NAME}"},
+        ],
+        "assessments": [
+            {
+                "sensitiveInformationPolicy": {
+                    "piiEntities": [{"type": "NAME", "action": "ANONYMIZED"}]
+                }
+            }
+        ],
+    }
+    assert _blocked_message(masked) == WITHHELD_MESSAGE
+    assert _blocked_message(fixture("apply_guardrail_intervened.json")) == GUARDED  # BLOCKED

@@ -1145,8 +1145,26 @@ def apply_guardrail(
     return resp if resp.get("action") == GUARDRAIL_INTERVENED else None
 
 
+WITHHELD_MESSAGE = "This content was withheld by a guardrail."
+
+
+def _blocked(value: Any) -> bool:
+    if isinstance(value, dict):
+        return value.get("action") == "BLOCKED" or any(_blocked(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_blocked(v) for v in value)
+    return False
+
+
 def _blocked_message(resp: dict[str, Any]) -> str:
-    return "".join(o.get("text", "") for o in resp.get("outputs") or [])
+    """What the caller sees instead of withheld content. A blocking policy returns the
+    guardrail's configured blocked message as its single output; anything else (e.g. PII
+    masking) returns one output per checked block, which can include masked reasoning,
+    tool arguments or the system prompt, so it's never shown."""
+    outputs = resp.get("outputs") or []
+    if _blocked(resp.get("assessments")) and len(outputs) == 1:
+        return str(outputs[0].get("text") or WITHHELD_MESSAGE)
+    return WITHHELD_MESSAGE
 
 
 class _Completions:
