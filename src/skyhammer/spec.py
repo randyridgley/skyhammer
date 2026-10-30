@@ -65,7 +65,7 @@ class DeploySpec(_Strict):
     name: str | None = None
     # SageMaker-served models only.
     scaling: Scaling | None = None
-    instance_type: str | None = None
+    instance_type: str | list[str] | None = None
 
 
 class EvalSpec(_Strict):

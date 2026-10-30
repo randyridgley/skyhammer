@@ -624,6 +624,7 @@ class SageMakerServerlessBackend:
             hosting=self.hosting_for(model.base_alias),
             scaling=opts.scaling or Scaling(),
             instance_type=opts.instance_type,
+            params_b=_params_b(model.base_alias),
             tags=opts.tags,
             log=lambda msg: log.info("%s: %s", opts.name, msg),
         )
@@ -659,6 +660,7 @@ class SageMakerServerlessBackend:
             merged=False,
             scaling=opts.scaling or Scaling(),
             instance_type=opts.instance_type,
+            params_b=entry.params_b,
             tags=opts.tags,
             log=lambda msg: log.info("%s: %s", opts.name, msg),
         )
@@ -757,3 +759,9 @@ def format_log_event(message: str) -> str:
         return message.rstrip()
     ts = str(event.get("timestamp", ""))[11:19]
     return f"{ts} {event.get('category', '')} {event['message']}".strip()
+
+
+def _params_b(alias: str) -> float | None:
+    from skyhammer.catalog import get_model
+
+    return get_model(alias).params_b

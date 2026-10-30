@@ -6,6 +6,12 @@ doesn't offer serverless. Cost: GPU instance-hours while running (e.g. ml.g6e.2x
 $2.80/h); scales to zero when idle. Measured live: deploy ~8 min; scale to zero after
 ~20 min idle; the first request after that waits ~10 min for an instance (the SDK retries),
 so use min_copies=1 or warm() before interactive traffic.
+
+GPUs run out: when the preferred instance has no capacity, SageMaker falls back to other
+GPU types that fit the model (up to 5, in order), at creation and on every scale-out.
+Leave instance_type unset for automatic fallbacks, pass a list for your own order, or one
+type to pin it. Measured live 2026-10-30: ml.g6e.2xlarge had no capacity; the endpoint
+came up on ml.g5.xlarge in 2 minutes instead of failing.
 Run: uv run python examples/21_dedicated_endpoints.py
 """
 
@@ -16,6 +22,7 @@ from skyhammer.serving import Scaling
 llm = LLM("qwen3-8b", deployment_type="dedicated").deploy(
     name="qwen3-8b-dedicated",
     scaling=Scaling(min_copies=0, max_copies=2, target_invocations_per_copy=5),  # defaults: 0..1
+    # instance_type=["ml.g6e.2xlarge", "ml.g5.2xlarge"],  # optional: your own fallback order
 )
 print(
     llm.chat.completions.create(messages=[{"role": "user", "content": "Hello!"}], max_tokens=40)

@@ -99,14 +99,26 @@ class Grader:
 
     @property
     def function_name(self) -> str:
-        """Lambda name for a deployed Python grader: versioned by the code's fingerprint."""
-        return f"skyhammer-grader-{self.name}"[:55] + f"-{self.fingerprint()[:8]}"
+        return self.function_name_for("sagemaker")
 
-    def deploy(self, session: Any = None, *, region: str | None = None) -> Grader:
+    def function_name_for(self, contract: str) -> str:
+        """Lambda name for a deployed Python grader, versioned by the deployed module (the
+        grader's code plus the reward-contract adapter, so adapter fixes redeploy)."""
+        code = (lambda_source(self) if self.fn else self.fingerprint()) + contract
+        digest = hashlib.sha256(code.encode()).hexdigest()
+        suffix = "-br" if contract == "bedrock" else ""
+        return f"skyhammer-grader-{self.name}"[:52] + f"{suffix}-{digest[:8]}"
+
+    def deploy(
+        self, session: Any = None, *, region: str | None = None, contract: str = "sagemaker"
+    ) -> Grader:
         """Deploy a Python grader as a Lambda (idempotent); returns a Lambda grader.
 
-        The function speaks both contracts: SageMaker RLVR reward calls (a list of samples
-        with ``reference_answer.text``) and eval calls (``{"sample", "output"}``). Graders
+        The function speaks every contract: SageMaker RLVR reward calls (a list of samples
+        with ``reference_answer.text``), Bedrock RFT reward calls (a list of samples with
+        ``metadata.reference_answer``) and eval calls (``{"sample", "output"}``). SageMaker
+        and Bedrock both send a plain list but expect different replies, so ``contract``
+        ("sagemaker" or "bedrock") picks the reply shape and gets its own function. Graders
         must be self-contained (standard library only; ``requirements`` aren't packaged yet).
         """
         from skyhammer import tags as tagging
@@ -118,10 +130,12 @@ class Grader:
             raise TypeError("Only Python graders can be deployed; LLM judges run in Bedrock")
         if self.requirements:
             raise NotImplementedError("Packaging grader requirements isn't supported yet")
+        if contract not in ("sagemaker", "bedrock"):
+            raise ValueError("contract must be 'sagemaker' or 'bedrock'")
         session = session or get_session()
         res = session.resources
         lam = session.client("lambda", region=region)  # same region as the training job
-        name = self.function_name
+        name = self.function_name_for(contract)
         try:
             arn = lam.get_function(FunctionName=name)["Configuration"]["FunctionArn"]
             return Grader.from_lambda(arn, name=self.name)
@@ -135,9 +149,10 @@ class Grader:
             Role=res.grader_role_arn,
             Handler="skyhammer_grader.lambda_handler",
             Code={"ZipFile": _lambda_zip(self)},
-            Timeout=self.timeout_s,
+            Timeout=max(self.timeout_s, 60),  # RL reward calls send batches of samples
             MemorySize=256,
-            Description=f"Skyhammer grader {self.name}",
+            Description=f"Skyhammer grader {self.name} ({contract} reward contract)",
+            Environment={"Variables": {"SKYHAMMER_REWARD_CONTRACT": contract}},
             Tags=tagging.build_tags({"name": name, "kind": "grader"}, session.settings.tags),
         )["FunctionArn"]
         lam.get_waiter("function_active_v2").wait(FunctionName=name)
@@ -148,8 +163,9 @@ class Grader:
         from skyhammer.session import get_session
 
         lam = (session or get_session()).client("lambda")
-        with contextlib.suppress(lam.exceptions.ResourceNotFoundException):
-            lam.delete_function(FunctionName=self.function_name)
+        for contract in ("sagemaker", "bedrock"):
+            with contextlib.suppress(lam.exceptions.ResourceNotFoundException):
+                lam.delete_function(FunctionName=self.function_name_for(contract))
 
 
 def grader(
@@ -278,6 +294,7 @@ def _judge(g: Grader, sample: dict[str, Any], output: str) -> float:
 _LAMBDA_ADAPTER = """
 
 import json as _json
+import os as _os
 import uuid as _uuid
 
 
@@ -292,17 +309,22 @@ def _skyhammer_output(sample):
 
 
 def _skyhammer_reference(sample):
-    for ref in (sample.get("reference_answer"), (sample.get("extra_info") or {}).get(
-            "reference_answer")):
+    for ref in (
+        sample.get("reference_answer"),
+        (sample.get("extra_info") or {}).get("reference_answer"),
+        (sample.get("metadata") or {}).get("reference_answer"),  # Bedrock RFT
+    ):
         if isinstance(ref, dict) and isinstance(ref.get("text"), str):
             return ref["text"]
         if isinstance(ref, str):
             return ref
+        if isinstance(ref, dict):
+            return _json.dumps(ref)
     return (sample.get("reward_model") or {}).get("ground_truth") or ""
 
 
 def _skyhammer_score(sample):
-    view = dict(sample)
+    view = {**(sample.get("metadata") or {}), **sample}  # Bedrock puts custom fields here
     ref = _skyhammer_reference(sample)
     if ref and "answer" not in view:
         view["answer"] = ref
@@ -317,6 +339,10 @@ def _skyhammer_score(sample):
 def lambda_handler(event, context):
     if isinstance(event, dict) and "sample" in event and "output" in event:  # skyhammer eval
         return {"score": float(__FN__(event["sample"], event["output"]))}
+    if _os.environ.get("SKYHAMMER_REWARD_CONTRACT") == "bedrock":
+        if isinstance(event, dict):
+            event = event.get("trajectories", [event])
+        return [_skyhammer_score(s) for s in event]  # Bedrock RFT: a plain list back
     raw = event.get("body", event) if isinstance(event, dict) else event
     body = _json.loads(raw) if isinstance(raw, str) else raw
     if isinstance(body, dict):

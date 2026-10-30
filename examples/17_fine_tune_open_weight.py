@@ -22,7 +22,8 @@ job = base.create_sft_job(
     ds,
     output_model="support-qwen",
     epochs=1,
-    lora_rank=16,  # LoRA by default; training_type="full" for full fine-tuning
+    lora_rank=16,  # LoRA by default; training_type="full" for full fine-tuning, which
+    # defaults to learning_rate=1e-5 (1e-4 suits LoRA but makes full FT memorize and ramble)
     learning_rate=1e-4,
     # hyperparameters_extra={"lora_dropout": 0.1},  # any recipe key, validated too
 )

@@ -1,0 +1,23 @@
+{
+  "ProductionVariants": [
+    {
+      "VariantName": "AllTraffic",
+      "CurrentInstanceCount": 1,
+      "DesiredInstanceCount": 1,
+      "InstancePools": [
+        {
+          "InstanceType": "ml.g6.4xlarge",
+          "CurrentInstanceCount": 1
+        }
+      ],
+      "ManagedInstanceScaling": {
+        "Status": "ENABLED",
+        "MinInstanceCount": 0,
+        "MaxInstanceCount": 1
+      },
+      "RoutingConfig": {
+        "RoutingStrategy": "LEAST_OUTSTANDING_REQUESTS"
+      }
+    }
+  ]
+}

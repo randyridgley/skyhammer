@@ -60,6 +60,18 @@ def test_full_fine_tuning_omits_peft(session: Session, sft_file: Path) -> None:
     assert "Peft" not in kw["ServerlessJobConfig"]
 
 
+def test_full_fine_tuning_defaults_to_a_lower_learning_rate(
+    session: Session, sft_file: Path
+) -> None:
+    # Recipes ship 1e-4 (LoRA-sized); full FT at 1e-4 memorized and invented answers live.
+    assert build(session, sft_file, training_type="full")["HyperParameters"]["learning_rate"] == (
+        "1e-05"
+    )
+    explicit = build(session, sft_file, training_type="full", learning_rate=2e-5)
+    assert explicit["HyperParameters"]["learning_rate"] == "2e-05"
+    assert build(session, sft_file)["HyperParameters"]["learning_rate"] != "1e-05"  # LoRA as is
+
+
 def test_sdk_hyperparameters_map_to_recipe_keys(session: Session, sft_file: Path) -> None:
     hp = build(session, sft_file, lora_rank=64, batch_size=16, warmup_ratio=0.05)["HyperParameters"]
     assert (hp["lora_rank"], hp["global_batch_size"], hp["lr_warmup_steps_ratio"]) == (

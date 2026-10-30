@@ -15,7 +15,7 @@ from skyhammer.backends.base import (
 )
 from skyhammer.catalog import DatasetLimits, ModelEntry, Technique, TrainingType
 from skyhammer.errors import UnsupportedParameterError
-from skyhammer.formats import to_bedrock_conversation
+from skyhammer.formats import message_text, to_bedrock_conversation
 from skyhammer.jobs import (
     JobHandle,
     JobRecord,
@@ -49,6 +49,19 @@ _HP_KEYS = {
     "warmup_steps": "learningRateWarmupSteps",
 }
 
+# RFT hyperparameters live in rftConfig, typed (not the string map other techniques use).
+_RFT_HP_KEYS = {"epochs": "epochCount", "learning_rate": "learningRate", "batch_size": "batchSize"}
+_RFT_INT_KEYS = {
+    "epochCount",
+    "batchSize",
+    "maxPromptLength",
+    "trainingSamplePerPrompt",
+    "inferenceMaxTokens",
+    "evalInterval",
+}
+RFT_MIN_PROMPTS, RFT_MAX_PROMPTS = 100, 20_000
+_REFERENCE_KEYS = ("answer", "reference", "expected", "reference_answer")
+
 DEFAULT_TEACHER_MAX_RESPONSE_TOKENS = 1000
 
 
@@ -80,11 +93,17 @@ class BedrockNativeBackend:
     def dataset_limits(
         self, entry: ModelEntry, technique: Technique, training_type: TrainingType
     ) -> DatasetLimits:
+        if technique is Technique.RFT:
+            return entry.limits.model_copy(
+                update={"min_samples": RFT_MIN_PROMPTS, "max_samples": RFT_MAX_PROMPTS}
+            )
         return entry.limits
 
     def format_record(self, technique: Technique, record: dict[str, Any]) -> dict[str, Any]:
         if technique is Technique.CPT:
             return {"input": record["text"]}
+        if technique is Technique.RFT:
+            return to_bedrock_rft(record)
         return to_bedrock_conversation(record)
 
     # ---- training ----
@@ -95,12 +114,16 @@ class BedrockNativeBackend:
         training_uri: str,
         validation_uri: str | None,
         output_uri: str,
+        *,
+        grader_arn: str | None = None,
     ) -> dict[str, Any]:
-        """Pure mapping from TrainingRequest to CreateModelCustomizationJob kwargs."""
+        """Pure mapping from TrainingRequest to CreateModelCustomizationJob kwargs.
+
+        RFT needs the reward Lambda's ARN: ``grader_arn`` (``submit`` deploys Python graders
+        first) or a Lambda grader's own ARN.
+        """
         res = self.session.resources_for(self.region)
         technique = request.technique
-        if technique is Technique.RFT:
-            raise NotImplementedError("RFT on Bedrock-native is planned for M3")
         tags = tagging.as_bedrock(request.tags)
         kwargs: dict[str, Any] = {
             "jobName": request.job_name,
@@ -125,6 +148,8 @@ class BedrockNativeBackend:
                     }
                 }
             }
+        elif technique is Technique.RFT:
+            kwargs["customizationConfig"] = {"rftConfig": _rft_config(request, grader_arn)}
         else:
             kwargs["hyperParameters"] = map_hyperparameters(
                 request, _HP_KEYS, "Remove them or pass backend='sagemaker'."
@@ -151,7 +176,18 @@ class BedrockNativeBackend:
             if request.validation_dataset
             else None
         )
-        kwargs = self.build_request(request, training_uri, validation_uri, f"{prefix}/output/")
+        grader_arn = None
+        if request.technique is Technique.RFT and request.grader:
+            # Build (and so validate) the request before creating the Lambda.
+            self.build_request(
+                request, training_uri, validation_uri, "s3://x/", grader_arn="pending"
+            )
+            # The reward Lambda runs in the training region (Bedrock calls it from there).
+            deployed = request.grader.deploy(self.session, region=self.region, contract="bedrock")
+            grader_arn = deployed.lambda_arn
+        kwargs = self.build_request(
+            request, training_uri, validation_uri, f"{prefix}/output/", grader_arn=grader_arn
+        )
         resp = self.bedrock.create_model_customization_job(**kwargs)
         return JobHandle(self.name, request.job_name, resp["jobArn"], self.region)
 
@@ -257,3 +293,49 @@ def _is_float(v: str) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def to_bedrock_rft(record: dict[str, Any]) -> dict[str, Any]:
+    """Prompt + reference -> Bedrock RFT row: OpenAI-style ``messages`` (ending with the
+    prompt), ``reference_answer``, and any other fields, which reach the reward Lambda in
+    ``metadata``. A trailing assistant turn is treated as the reference, not the prompt."""
+    from skyhammer.graders import reference_answer
+
+    messages = record["messages"]
+    if messages and messages[-1].get("role") == "assistant":
+        messages = messages[:-1]
+    reference = record.get("reference_answer") or reference_answer(record)
+    extra = {k: v for k, v in record.items() if k not in ("messages", *_REFERENCE_KEYS)}
+    return {
+        **extra,
+        "messages": [{"role": m["role"], "content": message_text(m["content"])} for m in messages],
+        "reference_answer": reference,
+    }
+
+
+def _rft_config(request: TrainingRequest, grader_arn: str | None) -> dict[str, Any]:
+    from skyhammer.graders import GraderKind
+
+    g = request.grader
+    if g is None:
+        raise UnsupportedParameterError("rft requires a grader (a Python function or Lambda)")
+    if g.kind is GraderKind.LLM_JUDGE:
+        raise UnsupportedParameterError(
+            "Bedrock RFT takes Lambda rewards; write the judge call in a @grader function"
+        )
+    arn = grader_arn if grader_arn is not None else g.lambda_arn
+    if arn is None:
+        raise UnsupportedParameterError("deploy the grader first (submit does this)")
+    hp: dict[str, Any] = {
+        k: (int(v) if k in _RFT_INT_KEYS else v)
+        for k, v in map_hyperparameters(
+            request, _RFT_HP_KEYS, "Pass RFT-specific keys with hyperparameters_extra."
+        ).items()
+    }
+    for key in ("learningRate",):
+        if key in hp:
+            hp[key] = float(hp[key])
+    config: dict[str, Any] = {"graderConfig": {"lambdaGrader": {"lambdaArn": arn}}}
+    if hp:
+        config["hyperParameters"] = hp
+    return config

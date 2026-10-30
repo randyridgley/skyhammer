@@ -9,9 +9,9 @@ model-specific fields through ``additionalModelRequestFields``).
     tools, tool_choice, response_format, reasoning_effort, service_tier,
     guardrail={"id", "version", "trace"?}, latency="optimized", extra_body
 
-``guardrail`` works on Converse and on imported models (InvokeModel); a blocked request or
-answer comes back with ``finish_reason="content_filter"`` and the guardrail's message as
-content. SageMaker endpoints don't support Bedrock guardrails, so passing one raises.
+``guardrail`` works on every model: Converse applies it on the call; imported models and
+SageMaker endpoints check the prompt and the answer with ApplyGuardrail. A blocked request
+or answer comes back with ``finish_reason="content_filter"`` and the guardrail's message.
 
 Responses are OpenAI-shaped. ``message.reasoning_content`` carries model reasoning (Bedrock
 ``reasoningContent`` blocks, or ``<think>`` text split out of the answer). ``.raw`` holds the
@@ -627,25 +627,8 @@ def to_openai_chat_body(messages: list[dict[str, Any]], **params: Any) -> dict[s
     return body
 
 
-def invoke_guardrail_args(params: dict[str, Any]) -> dict[str, str]:
-    """InvokeModel takes the guardrail as request parameters, not in the body."""
-    g = params.get("guardrail")
-    if not g:
-        return {}
-    args = {"guardrailIdentifier": g["id"], "guardrailVersion": str(g.get("version", "DRAFT"))}
-    if g.get("trace"):
-        args["trace"] = "ENABLED"
-    return args
-
-
-def _guardrail_blocked(resp: dict[str, Any]) -> bool:
-    # InvokeModel keeps the model's own stop reason and flags the block separately.
-    return resp.get("amazon-bedrock-guardrailAction") == "INTERVENED"
-
-
 def from_openai_chat_response(model_id: str, resp: dict[str, Any]) -> ChatCompletion:
     usage = resp.get("usage", {})
-    blocked = _guardrail_blocked(resp)
     choices = []
     for i, c in enumerate(resp.get("choices", [])):
         msg = c.get("message", {})
@@ -666,7 +649,7 @@ def from_openai_chat_response(model_id: str, resp: dict[str, Any]) -> ChatComple
                     calls or None,
                     msg.get("reasoning_content") or think,
                 ),
-                "content_filter" if blocked else c.get("finish_reason") or "stop",
+                c.get("finish_reason") or "stop",
             )
         )
     return ChatCompletion(
@@ -878,7 +861,6 @@ def openai_stream_chunks(model_id: str, body: Any) -> Iterator[ChatCompletionChu
             continue
         data = json.loads(payload)
         u = data.get("usage")
-        blocked = _guardrail_blocked(data)
         choices = []
         for c in data.get("choices", []):
             delta = c.get("delta") or {}
@@ -898,9 +880,7 @@ def openai_stream_chunks(model_id: str, body: Any) -> Iterator[ChatCompletionChu
                 ChunkChoice(
                     c.get("index", 0),
                     Delta(role=delta.get("role"), content=content, reasoning_content=reasoning),
-                    "content_filter"
-                    if blocked and c.get("finish_reason")
-                    else c.get("finish_reason"),
+                    c.get("finish_reason"),
                 )
             )
         yield ChatCompletionChunk(
@@ -1114,12 +1094,36 @@ _THROTTLE_CODES = {
 }
 
 
-def _check_guardrail_supported(api: str, params: dict[str, Any]) -> None:
-    if params.get("guardrail") and api == "sagemaker":
-        raise ValueError(
-            "Bedrock guardrails don't apply to SageMaker endpoints. Deploy on Bedrock "
-            "(serving='bedrock') or check text yourself with the ApplyGuardrail API."
-        )
+GUARDRAIL_INTERVENED = "GUARDRAIL_INTERVENED"
+
+
+def guardrail_text_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The prompt text a guardrail assesses: system and user messages, one block each."""
+    return [
+        {"text": {"text": text}}
+        for m in messages
+        if m.get("role") in ("system", "user") and (text := message_text(m.get("content")))
+    ]
+
+
+def apply_guardrail(
+    runtime: Any, guardrail: dict[str, Any], source: str, blocks: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """ApplyGuardrail on ``blocks``; returns the response if the guardrail intervened."""
+    if not blocks:
+        return None
+    resp: dict[str, Any] = runtime.apply_guardrail(
+        guardrailIdentifier=guardrail["id"],
+        guardrailVersion=str(guardrail.get("version", "DRAFT")),
+        source=source,
+        content=blocks,
+    )
+    resp.pop("ResponseMetadata", None)
+    return resp if resp.get("action") == GUARDRAIL_INTERVENED else None
+
+
+def _blocked_message(resp: dict[str, Any]) -> str:
+    return "".join(o.get("text", "") for o in resp.get("outputs") or [])
 
 
 class _Completions:
@@ -1130,15 +1134,63 @@ class _Completions:
         """Returns ``ChatCompletion``, or a ``Stream`` of chunks when ``stream=True``."""
         if self._chat._before_call:
             self._chat._before_call()  # e.g. spend limit
+        if params.get("guardrail") and self._chat.api != "converse":
+            return self._guarded(messages, params, stream)
         if stream:
             return self._chat._with_cold_start(lambda: self._stream(messages, params))
         result: ChatCompletion = self._chat._with_cold_start(lambda: self._once(messages, params))
         self._chat._after(result.usage, result.service_tier)
         return result
 
+    def _guarded(self, messages: list[dict[str, Any]], params: dict[str, Any], stream: bool) -> Any:
+        """Guardrails for imported models and SageMaker endpoints, which can't take one on
+        the call (InvokeModel rejects OpenAI bodies with a guardrail, seen live): check the
+        prompt with ApplyGuardrail, call the model, then check the answer. Streams are
+        buffered so a blocked answer is never shown."""
+        chat = self._chat
+        guardrail = params["guardrail"]
+        rest = {k: v for k, v in params.items() if k != "guardrail"}
+        checker = chat.guardrail_runtime or chat.runtime
+        trace: dict[str, Any] = {}
+        blocked = apply_guardrail(checker, guardrail, "INPUT", guardrail_text_blocks(messages))
+        if blocked:
+            trace["input"] = blocked
+            result = ChatCompletion(
+                id=f"chatcmpl-{uuid.uuid4().hex}",
+                model=chat.model_id,
+                choices=[
+                    Choice(0, Message("assistant", _blocked_message(blocked)), "content_filter")
+                ],
+                usage=Usage(0, 0, 0),
+                raw={},
+            )
+        else:
+            result = (
+                self.create(messages=messages, stream=True, **rest).final()
+                if stream
+                else self.create(messages=messages, **rest)
+            )
+            answer = result.choices[0].message.content if result.choices else None
+            blocks = [{"text": {"text": answer}}] if answer else []
+            out = apply_guardrail(checker, guardrail, "OUTPUT", blocks)
+            if out:
+                trace["output"] = out
+                result.choices[0].message.content = _blocked_message(out)
+                result.choices[0].message.tool_calls = None
+                result.choices[0].finish_reason = "content_filter"
+        if guardrail.get("trace"):
+            result.raw = {**(result.raw or {}), "guardrail": trace}
+        if not stream:
+            return result
+        choice = result.choices[0]
+        delta = Delta("assistant", choice.message.content)
+        chunk = ChatCompletionChunk(
+            result.id, result.model, [ChunkChoice(0, delta, choice.finish_reason)], result.usage
+        )
+        return Stream(result.model, iter([chunk]))
+
     def _once(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> ChatCompletion:
         chat = self._chat
-        _check_guardrail_supported(chat.api, params)
         if chat.api == "sagemaker":
             resp = chat.runtime.invoke_endpoint(
                 EndpointName=chat.model_id,
@@ -1154,7 +1206,6 @@ class _Completions:
                 body=json.dumps(to_openai_chat_body(messages, **params)),
                 contentType="application/json",
                 accept="application/json",
-                **invoke_guardrail_args(params),
             )
             return from_openai_chat_response(chat.model_id, json.loads(resp["body"].read()))
         req = to_converse_request(chat.model_id, messages, **params)
@@ -1164,7 +1215,6 @@ class _Completions:
 
     def _stream(self, messages: list[dict[str, Any]], params: dict[str, Any]) -> Stream:
         chat = self._chat
-        _check_guardrail_supported(chat.api, params)
         if chat.api == "sagemaker":
             body = to_openai_chat_body(messages, **params) | {"stream": True}
             resp = chat.runtime.invoke_endpoint_with_response_stream(
@@ -1181,7 +1231,6 @@ class _Completions:
                 body=json.dumps(body),
                 contentType="application/json",
                 accept="application/json",
-                **invoke_guardrail_args(params),
             )
             chunks = openai_stream_chunks(chat.model_id, resp["body"])
         else:
@@ -1248,8 +1297,11 @@ class Chat:
         sleep: Callable[[float], None] = time.sleep,
         on_usage: Callable[[Usage, str | None], None] | None = None,
         before_call: Callable[[], None] | None = None,
+        guardrail_runtime: Any = None,
     ) -> None:
         self.runtime = runtime
+        # bedrock-runtime client for ApplyGuardrail when ``runtime`` isn't one (SageMaker).
+        self.guardrail_runtime = guardrail_runtime
         self.model_id = model_id
         self.api = api
         self.component = component  # SageMaker inference component name (api="sagemaker")

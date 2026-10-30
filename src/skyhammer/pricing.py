@@ -2,6 +2,7 @@
 
 Usage types (verified 2026-10-29, us-east-1):
   Bedrock-native:  {R}-NovaMicro-Customization-Training            per 1K tokens
+                   {R}-Nova2.0Lite-RFT-Training-Hours               per hour (RFT)
                    {R}-NovaMicro-Customization-Storage             per model-month
   SageMaker:       {R}-ServerlessTraining:FineTuning-SFT-LORA-<hub-model-id>   per 1M tokens
                    ...-RLVR-LORA-<hub-model-id>                      per hour (RL techniques)
@@ -59,7 +60,10 @@ def usage_type(route: Route, technique: Technique, training_type: TrainingType) 
     if prefix is None:
         return None
     if route.backend is BackendKind.BEDROCK:
+        # Open-weight Bedrock customization (Qwen, GPT-OSS) isn't in the Price List yet.
         name = _NOVA_PRICE_NAME.get(route.model.alias)
+        if name and technique is Technique.RFT:
+            return f"{prefix}-{name}-RFT-Training-Hours"
         return f"{prefix}-{name}-Customization-Training" if name else None
     tech = _SM_TECHNIQUE.get(technique)
     if tech is None:

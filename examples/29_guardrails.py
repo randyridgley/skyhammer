@@ -2,9 +2,9 @@
 
 Pass ``guardrail={"id", "version"}`` to any chat call. When the guardrail blocks the
 prompt or the answer, ``finish_reason`` is ``"content_filter"`` and the content is the
-guardrail's blocked message. It works the same for serverless models (Converse) and for
-fine-tuned models imported into Bedrock. SageMaker endpoints don't support Bedrock
-guardrails, so the call raises instead of skipping the check.
+guardrail's blocked message. It works the same for every model: serverless models apply
+it on the call; fine-tuned models imported into Bedrock and SageMaker endpoints check the
+prompt and the answer with the ApplyGuardrail API (a blocked prompt never reaches the model).
 
 This example creates a temporary guardrail that denies investment advice, then deletes it.
 
@@ -59,7 +59,7 @@ try:
     assessment = resp.raw["trace"]["guardrail"]["inputAssessment"][guardrail_id]
     print("matched:", assessment["topicPolicy"]["topics"][0]["name"])
 
-    # Fine-tuned models take the same parameter (imported weights run through InvokeModel):
-    #   LLM("support-qwen").chat.completions.create(messages=..., guardrail=guardrail)
+    # Fine-tuned models and SageMaker endpoints take the same parameter:
+    #   LLM.get("support-qwen").chat.completions.create(messages=..., guardrail=guardrail)
 finally:
     bedrock.delete_guardrail(guardrailIdentifier=guardrail_id)

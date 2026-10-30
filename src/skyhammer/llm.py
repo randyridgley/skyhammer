@@ -48,6 +48,8 @@ from skyhammer.session import Session, get_session
 
 log = logging.getLogger(__name__)
 
+FULL_FT_LEARNING_RATE = 1e-5  # SageMaker full fine-tuning default (recipes ship 1e-4)
+
 # Bedrock job names are <=63 chars and the SDK appends "-<8 hex>".
 _NAME = re.compile(r"^[a-zA-Z0-9](-*[a-zA-Z0-9])*$")
 _MAX_NAME = 54
@@ -294,6 +296,19 @@ class LLM:
         for w in dataset.report.warnings:
             log.warning("dataset %s: %s", dataset.name, w.message)
 
+        if (
+            route.backend is BackendKind.SAGEMAKER
+            and ttype is TrainingType.FULL
+            and hyperparameters.get("learning_rate") is None
+        ):
+            # The recipes default to 1e-4, a LoRA-sized rate. For full fine-tuning it made
+            # Qwen3-0.6B memorize answers and invent details (live, 2026-10-30); 1e-5
+            # generalized and stopped cleanly.
+            hyperparameters = {**hyperparameters, "learning_rate": FULL_FT_LEARNING_RATE}
+            log.info(
+                "full fine-tuning: learning_rate=%g (set learning_rate to change)",
+                FULL_FT_LEARNING_RATE,
+            )
         hp = Hyperparameters(**hyperparameters, extra=hyperparameters_extra or {})
         request = TrainingRequest(
             technique=technique,
@@ -323,6 +338,12 @@ class LLM:
         if price.usd_per_hour is not None or technique is Technique.RFT:
             if route.backend is not BackendKind.SAGEMAKER and max_hours is not None:
                 raise UnsupportedParameterError("max_hours applies to SageMaker RL jobs only")
+            if route.backend is BackendKind.BEDROCK:
+                log.warning(
+                    "Bedrock RFT is billed by training time%s and has no runtime cap; "
+                    "keep epochs and prompts small, and job.cancel() stops it",
+                    f" (${price.usd_per_hour:g}/h)" if price.usd_per_hour else "",
+                )
             if route.backend is BackendKind.SAGEMAKER and max_hours is None:
                 max_hours = cost.DEFAULT_RL_MAX_HOURS
                 log.warning(
@@ -408,7 +429,7 @@ class LLM:
         type: str | DeploymentType = "on_demand",
         serving: str | ServingTarget | None = None,
         scaling: Scaling | dict[str, Any] | None = None,
-        instance_type: str | None = None,
+        instance_type: str | list[str] | None = None,
         accept_eula: bool = False,
         wait: bool = True,
     ) -> LLM:
@@ -417,7 +438,11 @@ class LLM:
         Bedrock-served models are serverless. SageMaker-served models get an endpoint that
         scales to zero when idle by default; pass ``scaling=Scaling(min_copies=1, ...)`` to
         keep it warm or tune autoscaling. ``serving="bedrock"`` on a SageMaker-served model
-        re-imports its stored weights into Bedrock (no retraining)."""
+        re-imports its stored weights into Bedrock (no retraining).
+
+        ``instance_type`` (SageMaker only): leave unset to use AWS's recommended instance
+        with automatic fallback to other GPU types when it has no capacity; pass a list to
+        set your own fallback order, or one type to pin it."""
         if self.model_ref is None:
             return self._deploy_base(
                 name, scaling=scaling, instance_type=instance_type, accept_eula=accept_eula
@@ -540,7 +565,7 @@ class LLM:
         name: str | None,
         *,
         scaling: Scaling | dict[str, Any] | None,
-        instance_type: str | None,
+        instance_type: str | list[str] | None,
         accept_eula: bool,
     ) -> LLM:
         """Base models: serverless needs no deploy; dedicated gets a SageMaker endpoint."""
@@ -803,6 +828,9 @@ class LLM:
                     names.endpoint, None
                 ),  # billed per instance-hour, not per token
                 before_call=self.session.spend.check,
+                guardrail_runtime=self.session.client(
+                    "bedrock-runtime", region=self.model_ref.region
+                ),
             )
         region = self.model_ref.region if self.model_ref else None
         model_id = self.model_id

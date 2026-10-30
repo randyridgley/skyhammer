@@ -43,7 +43,8 @@ class DeployOptions:
     tags: dict[str, str] | None = None
     # SageMaker endpoints only.
     scaling: Scaling | None = None
-    instance_type: str | None = None
+    # One type pins it; a list is a capacity-fallback order; None picks automatically.
+    instance_type: str | list[str] | None = None
 
 
 @dataclass(frozen=True)

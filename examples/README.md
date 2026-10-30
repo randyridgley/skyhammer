@@ -28,7 +28,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [09_batch_inference.py](09_batch_inference.py) | Discounted batch jobs over 100+ requests | SI-13, SV-9 |
 | [10_prompt_caching.py](10_prompt_caching.py) | Cache a long prompt prefix | SI-21, SV-16 |
 | [11_multimodal_and_completions.py](11_multimodal_and_completions.py) | Images, documents, video (inline or S3), and the completions API | SI-20, SI-23 |
-| [29_guardrails.py](29_guardrails.py) | Block topics or content on any call; `content_filter` and traces | SI-22 |
+| [29_guardrails.py](29_guardrails.py) | Block topics or content on any call, including fine-tuned models and endpoints; `content_filter` and traces | SI-22, SV-17 |
 | [12_api_keys_and_openai_client.py](12_api_keys_and_openai_client.py) | Bedrock API keys; the OpenAI SDK against Bedrock | SI-16, SI-17 |
 | [13_model_discovery_and_quotas.py](13_model_discovery_and_quotas.py) | List models and routes, quotas, throttling errors | SI-4, SI-18 |
 
@@ -54,7 +54,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 |---|---|---|
 | [19_evaluation.py](19_evaluation.py) | Built-in, Python, LLM-judge and Lambda graders; deploy a grader; compare models | EV-1, EV-2, EV-3, EV-4, EV-5, EV-7 |
 | [25_managed_eval.py](25_managed_eval.py) | Bedrock managed evaluation jobs: a judge model scores answers at scale | EV-6 |
-| [21_dedicated_endpoints.py](21_dedicated_endpoints.py) | SageMaker endpoints with scale-to-zero, autoscaling, `warm()`, move to Bedrock | SV-4, SV-5, SV-6, SV-13, SI-19 |
+| [21_dedicated_endpoints.py](21_dedicated_endpoints.py) | SageMaker endpoints with scale-to-zero, autoscaling, `warm()`, GPU capacity fallback, move to Bedrock | SV-4, SV-5, SV-6, SV-13, SV-18, SI-19 |
 | [22_bring_your_own_weights.py](22_bring_your_own_weights.py) | Import your own HF weights into Bedrock | TR-18 |
 | [23_manage_deployments.py](23_manage_deployments.py) | List and prune idle deployments | SV-7 |
 | [27_serving_metrics.py](27_serving_metrics.py) | Traffic, latency p50/p99, tokens and errors from CloudWatch | OP-5 |

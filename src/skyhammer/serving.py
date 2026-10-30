@@ -60,14 +60,87 @@ class Scaling(BaseModel):
         return self.min_copies == 0
 
 
-# GPU instance types for LLM serving: (instance type, GPUs, GPU memory per GPU in GB).
-# TODO(M2): confirm per-region availability and quotas; allow per-model overrides in catalog.
-_INSTANCES = [
-    ("ml.g6e.xlarge", 1, 48),
-    ("ml.g6e.12xlarge", 4, 48),
-    ("ml.g6e.48xlarge", 8, 48),
-    ("ml.p5.48xlarge", 8, 80),
-]
+@dataclass(frozen=True)
+class GpuInstance:
+    gpus: int
+    gpu_memory_gb: int  # per GPU
+    memory_gb: int  # host RAM
+    vcpus: int
+
+
+# GPU instance types that run the LMI/vLLM serving containers (bf16-capable: A10G, L4, L40S,
+# A100, H100), smallest first within each GPU count. Used to pick capacity fallbacks.
+GPU_INSTANCES: dict[str, GpuInstance] = {
+    "ml.g6.xlarge": GpuInstance(1, 24, 16, 4),
+    "ml.g5.xlarge": GpuInstance(1, 24, 16, 4),
+    "ml.g6.2xlarge": GpuInstance(1, 24, 32, 8),
+    "ml.g5.2xlarge": GpuInstance(1, 24, 32, 8),
+    "ml.g6e.xlarge": GpuInstance(1, 48, 32, 4),
+    "ml.g6.4xlarge": GpuInstance(1, 24, 64, 16),
+    "ml.g5.4xlarge": GpuInstance(1, 24, 64, 16),
+    "ml.g6e.2xlarge": GpuInstance(1, 48, 64, 8),
+    "ml.g6.8xlarge": GpuInstance(1, 24, 128, 32),
+    "ml.g5.8xlarge": GpuInstance(1, 24, 128, 32),
+    "ml.g6e.4xlarge": GpuInstance(1, 48, 128, 16),
+    "ml.g6e.8xlarge": GpuInstance(1, 48, 256, 32),
+    "ml.g6.12xlarge": GpuInstance(4, 24, 192, 48),
+    "ml.g5.12xlarge": GpuInstance(4, 24, 192, 48),
+    "ml.g6e.12xlarge": GpuInstance(4, 48, 384, 48),
+    "ml.g6.24xlarge": GpuInstance(4, 24, 384, 96),
+    "ml.g5.24xlarge": GpuInstance(4, 24, 384, 96),
+    "ml.g6e.24xlarge": GpuInstance(4, 48, 768, 96),
+    "ml.g6.48xlarge": GpuInstance(8, 24, 768, 192),
+    "ml.g5.48xlarge": GpuInstance(8, 24, 768, 192),
+    "ml.g6e.48xlarge": GpuInstance(8, 48, 1536, 192),
+    "ml.p4d.24xlarge": GpuInstance(8, 40, 1152, 96),
+    "ml.p4de.24xlarge": GpuInstance(8, 80, 1152, 96),
+    "ml.p5.48xlarge": GpuInstance(8, 80, 2048, 192),
+}
+MAX_INSTANCE_POOLS = 5  # SageMaker's limit per production variant
+# Total time SageMaker spends trying every pool before failing (allowed: 300-3600 s).
+PROVISION_TIMEOUT_S = 1200
+
+
+def _needed_gpu_gb(params_b: float) -> float:
+    return params_b * 2 * 1.3  # bf16 weights plus ~30% for KV cache
+
+
+def fallback_instances(
+    primary: str,
+    *,
+    gpus: int,
+    memory_mb: int,
+    cpus: int | None = None,
+    params_b: float | None = None,
+    limit: int = MAX_INSTANCE_POOLS - 1,
+) -> list[str]:
+    """Instance types that can host the same inference component as ``primary``.
+
+    Same GPU count (the container's tensor parallelism is set for it); at least the
+    primary's host RAM and vCPUs (AWS validated the profile on it, and a smaller host can
+    reject the copy even when the reservation fits: an 8 GB copy wasn't placed on a 16 GB
+    ml.g5.xlarge, live 2026-10-30); and enough GPU memory for the model when its size is
+    known, otherwise at least the primary's.
+    """
+    spec = GPU_INSTANCES.get(primary)
+    if params_b is not None:
+        needed_per_gpu = _needed_gpu_gb(params_b) / gpus
+    elif spec is not None:
+        needed_per_gpu = spec.gpu_memory_gb
+    else:
+        return []
+    min_memory_gb = max(spec.memory_gb if spec else 0, (memory_mb + 4096) / 1024)
+    min_vcpus = max(spec.vcpus if spec else 0, cpus or 1)
+    out = [
+        name
+        for name, i in GPU_INSTANCES.items()
+        if name != primary
+        and i.gpus == gpus
+        and i.gpu_memory_gb >= needed_per_gpu
+        and i.memory_gb >= min_memory_gb
+        and i.vcpus >= min_vcpus
+    ]
+    return out[:limit]
 
 
 @dataclass(frozen=True)
@@ -76,32 +149,66 @@ class InstanceChoice:
     gpus: int
     memory_mb: int
     cpus: int | None = None
+    # Lower-priority types SageMaker tries when ``instance_type`` has no capacity.
+    fallbacks: tuple[str, ...] = ()
+
+    @property
+    def instance_types(self) -> list[str]:
+        return [self.instance_type, *self.fallbacks]
 
     @classmethod
     def from_hosting(
-        cls, hosting: HostingConfig, instance_type: str | None = None
+        cls,
+        hosting: HostingConfig,
+        instance_type: str | list[str] | None = None,
+        *,
+        params_b: float | None = None,
     ) -> InstanceChoice:
-        """AWS's validated hosting profile for the recipe (Hub ``HostingConfigs``)."""
+        """AWS's validated hosting profile for the recipe (Hub ``HostingConfigs``).
+
+        ``instance_type``: None uses the profile's instance plus automatic capacity
+        fallbacks; a string pins one type; a list sets your own fallback order.
+        """
+        if isinstance(instance_type, list):
+            if not 1 <= len(instance_type) <= MAX_INSTANCE_POOLS:
+                raise ValueError(f"instance_type lists take 1-{MAX_INSTANCE_POOLS} types")
+            primary, *rest = instance_type
+            return cls(primary, hosting.gpus, hosting.memory_mb, hosting.cpus, tuple(rest))
+        if instance_type:
+            return cls(instance_type, hosting.gpus, hosting.memory_mb, hosting.cpus)
+        fallbacks = fallback_instances(
+            hosting.instance_type,
+            gpus=hosting.gpus,
+            memory_mb=hosting.memory_mb,
+            cpus=hosting.cpus,
+            params_b=params_b,
+        )
         return cls(
-            instance_type or hosting.instance_type, hosting.gpus, hosting.memory_mb, hosting.cpus
+            hosting.instance_type, hosting.gpus, hosting.memory_mb, hosting.cpus, tuple(fallbacks)
         )
 
 
 def choose_instance(params_b: float, *, instance_type: str | None = None) -> InstanceChoice:
-    """Smallest instance whose GPU memory fits bf16 weights plus ~30% for KV cache."""
-    needed_gb = params_b * 2 * 1.3
-    for itype, gpus, mem in _INSTANCES:
-        if instance_type and itype != instance_type:
-            continue
-        if instance_type or gpus * mem >= needed_gb:
-            # MinMemoryRequiredInMb reserves *host* RAM for the copy (weights load through it).
-            return InstanceChoice(itype, gpus, memory_mb=max(8192, int(needed_gb * 1024 // 4)))
+    """Smallest instance whose GPU memory fits the model (bf16 weights plus KV cache)."""
+    needed_gb = _needed_gpu_gb(params_b)
+    # MinMemoryRequiredInMb reserves *host* RAM for the copy (weights load through it).
+    memory_mb = max(8192, int(needed_gb * 1024 // 4))
     if instance_type:
-        raise ValueError(
-            f"Unknown instance type {instance_type!r}; known: "
-            + ", ".join(i[0] for i in _INSTANCES)
-        )
-    raise ValueError(f"No single instance fits a {params_b}B model; pass instance_type=")
+        if instance_type not in GPU_INSTANCES:
+            raise ValueError(
+                f"Unknown instance type {instance_type!r}; known: " + ", ".join(GPU_INSTANCES)
+            )
+        return InstanceChoice(instance_type, GPU_INSTANCES[instance_type].gpus, memory_mb)
+    fits = [
+        (name, i)
+        for name, i in GPU_INSTANCES.items()
+        if i.gpus * i.gpu_memory_gb >= needed_gb and i.memory_gb * 1024 >= memory_mb + 4096
+    ]
+    if not fits:
+        raise ValueError(f"No single instance fits a {params_b}B model; pass instance_type=")
+    name, spec = min(fits, key=lambda f: (f[1].gpus, f[1].memory_gb, f[1].gpu_memory_gb))
+    fallbacks = fallback_instances(name, gpus=spec.gpus, memory_mb=memory_mb, params_b=params_b)
+    return InstanceChoice(name, spec.gpus, memory_mb, fallbacks=tuple(fallbacks))
 
 
 @dataclass(frozen=True)
@@ -127,15 +234,29 @@ def endpoint_config_request(
     role_arn: str,
     kms_key_arn: str | None,
     tags: list[dict[str, str]],
+    network_isolation: bool = False,
 ) -> dict[str, Any]:
     instances_per_copy = 1  # one model copy per instance
+    placement: dict[str, Any] = (
+        {
+            # Capacity fallback: SageMaker tries each type in priority order on
+            # InsufficientInstanceCapacity, at creation and on every scale-out.
+            "InstancePools": [
+                {"InstanceType": itype, "Priority": i}
+                for i, itype in enumerate(choice.instance_types, start=1)
+            ],
+            "VariantInstanceProvisionTimeoutInSeconds": PROVISION_TIMEOUT_S,
+        }
+        if choice.fallbacks
+        else {"InstanceType": choice.instance_type}
+    )
     req: dict[str, Any] = {
         "EndpointConfigName": names.config,
         "ExecutionRoleArn": role_arn,
         "ProductionVariants": [
             {
                 "VariantName": names.variant,
-                "InstanceType": choice.instance_type,
+                **placement,
                 # Start with one instance so deployment fails fast if the model can't load;
                 # autoscaling scales in to min_copies once idle.
                 "InitialInstanceCount": 1,
@@ -151,6 +272,9 @@ def endpoint_config_request(
     }
     if kms_key_arn:
         req["KmsKeyId"] = kms_key_arn
+    if network_isolation:
+        # Must match the model's setting or CreateInferenceComponent fails (seen live).
+        req["EnableNetworkIsolation"] = True
     return req
 
 
@@ -351,7 +475,8 @@ class EndpointDeployer:
         network_isolation: bool = False,
         merged: bool = True,
         scaling: Scaling,
-        instance_type: str | None = None,
+        instance_type: str | list[str] | None = None,
+        params_b: float | None = None,
         tags: dict[str, str] | None = None,
         wait: bool = True,
         poll_seconds: float = 30,
@@ -359,7 +484,7 @@ class EndpointDeployer:
     ) -> str:
         res = self.session.resources_for(self.region)
         aws_tags = [{"Key": k, "Value": v} for k, v in (tags or {}).items()]
-        choice = InstanceChoice.from_hosting(hosting, instance_type)
+        choice = InstanceChoice.from_hosting(hosting, instance_type, params_b=params_b)
         if not self._exists(lambda: self.sm.describe_model(ModelName=names.model)):
             log(f"creating model {names.model}")
             self.sm.create_model(
@@ -386,16 +511,19 @@ class EndpointDeployer:
                     role_arn=res.sagemaker_role_arn,
                     kms_key_arn=res.kms_key_arn,
                     tags=aws_tags,
+                    network_isolation=network_isolation,
                 )
             )
         if not self._exists(lambda: self.sm.describe_endpoint(EndpointName=names.endpoint)):
-            log(f"creating endpoint {names.endpoint} ({choice.instance_type})")
+            log(f"creating endpoint {names.endpoint} ({' > '.join(choice.instance_types)})")
             self.sm.create_endpoint(
                 EndpointName=names.endpoint, EndpointConfigName=names.config, Tags=aws_tags
             )
         if not wait:
             return names.endpoint
         self._wait_in_service(names)
+        if choice.fallbacks:
+            log(f"running on {', '.join(self.instance_types(names)) or 'unknown'}")
         if not self._exists(
             lambda: self.sm.describe_inference_component(InferenceComponentName=names.component)
         ):
@@ -422,6 +550,19 @@ class EndpointDeployer:
             # Surface SageMaker's reason (e.g. InsufficientInstanceCapacity), not the waiter's.
             reason = self.sm.describe_endpoint(EndpointName=names.endpoint).get("FailureReason")
             raise JobFailedError(names.endpoint, reason or "endpoint failed to start") from None
+
+    def instance_types(self, names: EndpointNames) -> list[str]:
+        """Instance types currently running (with instance pools, possibly a fallback)."""
+        variants = self.sm.describe_endpoint(EndpointName=names.endpoint).get(
+            "ProductionVariants", []
+        )
+        out: list[str] = []
+        for v in variants:
+            pools = v.get("InstancePools") or []
+            out += [p["InstanceType"] for p in pools if p.get("CurrentInstanceCount")]
+            if not pools and v.get("CurrentInstanceCount"):
+                out += [i for i in [v.get("InstanceType")] if i]
+        return out
 
     def apply_scaling(self, names: EndpointNames, scaling: Scaling) -> None:
         plan = scaling_plan(names, scaling)

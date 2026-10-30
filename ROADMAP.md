@@ -82,13 +82,13 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 |---|---|---|---|---|
 | TR-1 | SFT LoRA (Nova, Bedrock-native) | ✅ | M1 | Live: Nova Micro, 41 min, deployed + chat |
 | TR-2 | SFT LoRA (open-weight, SageMaker serverless) | ✅ | M1 | Live: Qwen3-0.6B, 13 min train + 13 min import |
-| TR-3 | Full fine-tuning | 🟡 | M3 | Live 2026-10-29: Qwen3-0.6B full FT → import → chat → delete works, but output degenerated (`</think>assistant` loops). Investigate learning-rate default vs chat template in the FFT export before ✅ |
+| TR-3 | Full fine-tuning | ✅ | M3 | `training_type="full"`, defaulting to learning_rate=1e-5 (recipes ship 1e-4). Live 2026-10-30: the earlier degenerate output was 50 identical answers at 1e-4 (memorized text, never stopped); on varied data both rates learned to stop, 1e-4 invented details and 1e-5 generalized. Qwen3-0.6B full FT at 1e-5 → import (fp32 export, 18 min) → correct, clean answers → delete |
 | TR-4 | Hyperparameters validated vs AWS recipe specs | ✅ | M1 | Types/enums/bounds from Hub override params |
 | TR-5 | Auto-routing (backend, region, serving) | ✅ | M0 | Home region first, cross-region opt-out |
 | TR-6 | Distillation (Nova teacher → student) | ✅ | M3 | Verified live 2026-10-29: Nova Pro → Nova Micro from 150 prompts; 1h40m total (46 min teacher answers, ~52 min training), on-demand deploy, chat, delete. Job status shows the current stage |
 | TR-7 | Distillation for open-weight students | ✅ | M3 | Any Bedrock teacher answers the prompts (live calls; 50%-off batch from 1,000 prompts, since batch can queue for an hour+), cached in S3, then SFT; teacher cost bound checked against `max_cost_usd`. Verified live 2026-10-29: Claude Haiku 4.5 → Qwen3 0.6B, 100 answers in 24 s, ~2 min training, Bedrock import, chat, delete (~25 min end to end) |
 | TR-8 | DPO (open-weight) | ✅ | M4 | Documented chosen/rejected message format; `beta` → recipe `adam_beta`, checked against live recipe bounds. Verified live 2026-10-29: Qwen3 0.6B DPO ~10 min → Bedrock import ~13 min → chat → delete |
-| TR-9 | RFT, Nova 2 Lite (Bedrock-native) | ⬜ | M4 | Verify us-east-1 availability (filter returned none) |
+| TR-9 | RFT, Nova 2 Lite (Bedrock-native) | 🟡 | M4 | Bedrock RFT built: `rftConfig` with a Lambda reward (Python graders deploy with Bedrock's list-in/list-out reward contract), prompt + `reference_answer` rows (100-20K), $80/h price from the Price List, warning that Bedrock RFT has no runtime cap. 🔴 live run pending (billed $80/h) |
 | TR-10 | RLVR (Lambda reward) on SageMaker | ✅ | M4 | verl data format; Python graders auto-deploy as the reward Lambda, registered as a SageMaker Hub evaluator (JsonDoc) in Skyhammer's tagged `skyhammer` hub (`EvaluatorArn` must be hub content, not a Lambda ARN; found live). Verified live 2026-10-29: Qwen3 0.6B RLVR on 400 math prompts, ~5 min training, Bedrock import, chat answers `3 + 4 = 7`, everything deleted |
 | TR-11 | RLAIF (LLM-judge reward) | ⬜ | M4 | Hub evaluator (JsonDoc) creation |
 | TR-12 | Multi-turn / agentic RL | ⬜ | M6 | SageMaker MTRL (gpt-oss-20b, Qwen3.6) |
@@ -97,7 +97,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-15 | Checkpoint listing, eval and resume | ⬜ | M4 | `job.checkpoints()`; deploy from checkpoint |
 | TR-16 | Continued fine-tuning of a fine-tuned model | ⬜ | M4 | `SourceModelPackageArn` / Bedrock custom-as-base |
 | TR-17 | BYO training code / custom loops | ⬜ | M6 | SageMaker training job with user container → import |
-| TR-18 | Bring your own weights (import only) | 🟡 | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. The same import path ran live in SV-13; importing user-supplied weights from S3 still 🔴 |
+| TR-18 | Bring your own weights (import only) | ✅ | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. Live 2026-10-30: Qwen3-0.6B from Hugging Face → S3 → import (12.6 min) → chat → delete |
 | TR-19 | Live job logs and metrics | ✅ | M1.5 | SageMaker concise stream; Bedrock step-metrics CSV |
 | TR-20 | Vision fine-tuning | ⬜ | M6 | Nova Lite/Pro, Qwen-VL |
 
@@ -164,7 +164,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SI-16 | Bedrock API key auth (bearer) | ✅ | M2 | Short-term keys generated client-side (`skyhammer auth api-key`); `SKYHAMMER_API_KEY`/`AWS_BEARER_TOKEN_BEDROCK` work without AWS creds, incl. model discovery; long-term keys = IAM users (documented); live 2026-10-29 |
 | SI-17 | Drop-in OpenAI client (`skyhammer.openai_client()`) | ✅ | M2 | `skyhammer.openai_client()` (extra `skyhammer[openai]`) → `bedrock-runtime/openai/v1`; live 2026-10-29 |
 | SI-18 | Throttling handling + quota introspection | ✅ | M2 | `ThrottledError` with routing/tier/batch/quota guidance; `LLM.quotas()` + `skyhammer models quotas` (on-demand, geo, global TPM/RPM) |
-| SI-19 | `deployment_type="serverless"\|"dedicated"\|"auto"` | 🟡 | M3 | Dedicated deploy of fine-tuned weights verified live (SV-4). Base models from Hub prepacked artifacts: `CreateModel` verified live (after removing HubAccessConfig, which public-hub content rejects); the endpoint never came up because us-east-1 had no capacity on 2026-10-29 (ml.g6e.2xlarge, then ml.g5.2xlarge, 38 min each). Retry with SV-18 capacity fallback |
+| SI-19 | `deployment_type="serverless"\|"dedicated"\|"auto"` | ✅ | M3 | Dedicated deploy of fine-tuned weights verified live (SV-4). Base models from Hub prepacked artifacts, live 2026-10-30: Qwen3-0.6B deployed in 7.2 min on the first capacity fallback (ml.g6.4xlarge; ml.g6e.2xlarge had none), chat, delete. Fixed on the way: the endpoint config must match the model's network isolation, and fallbacks need at least the validated host size (an 8 GB copy wasn't placed on ml.g5.xlarge) |
 | SI-20 | Multimodal inputs (images, documents, video) | ✅ | M3 | `image_url`, `file` (PDF/DOCX/XLSX/CSV/TXT/MD/HTML) and `video_url` parts as data URLs; images and video also from `s3://`. Live 2026-10-30: image (Claude), document and video inline + S3 (Nova Lite) |
 | SI-21 | Prompt caching | ✅ | M3 | `cache_point` parts, Anthropic-style `cache_control`, `prompt_cache='system'`; cache tokens priced; live 2026-10-29: 3,269 cached tokens read at ~75% off. Note: caches are regional, so geo/global routing can miss — prefer `routing='region'` for cache-heavy work |
 | SI-22 | Guardrails on any call | ✅ | M3 | `guardrail={id, version, trace}`; blocks → `finish_reason="content_filter"` with the guardrail's message. Live 2026-10-30 (deny topic): allow, block, stream, trace |
@@ -190,10 +190,10 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-12 | Environments & promotion (dev → prod) | ⬜ | M5 | Aliases in manifests: `support-qwen@prod` → model version |
 | SV-13 | Move SageMaker-served model to Bedrock | ✅ | M3 | `ft.deploy(serving='bedrock')` imports stored weights (pre-flight checked), then removes the endpoint. Live: 14.8 min import, first call 2 min (CMI warm-up), chat works |
 | SV-14 | Quantization / speculative decoding | ⬜ | M6 | LMI options on SageMaker; not exposed by Bedrock CMI |
-| SV-18 | GPU capacity fallback | ⬜ | M4 | Seen live 2026-10-29: ml.g6e.2xlarge `InsufficientInstanceCapacity` in us-east-1 after 38 min. Add InstancePools (up to 5 types by priority) or a sequential fallback to the next instance that fits, plus a shorter `VariantInstanceProvisionTimeoutInSeconds` |
+| SV-18 | GPU capacity fallback | ✅ | M4 | SageMaker instance pools: AWS's recommended instance first, then up to 4 GPU types with the same GPU count, at least the validated host's RAM and vCPUs, and enough GPU memory for the model; `instance_type=[...]` sets the order, a string pins one; 20-min provisioning timeout. Live 2026-10-30: ml.g6e.2xlarge had no capacity three times; endpoints came up on ml.g5.xlarge (2 min) and ml.g6.4xlarge (3 min), and one attempt with no capacity anywhere failed cleanly after 20 min |
 | SV-15 | Embedding / rerank model fine-tuning | ➖ | — | CMI doesn't support embedding models; revisit |
 | SV-16 | Prompt caching | ✅ | M3 | Same feature as SI-21 |
-| SV-17 | Bedrock Guardrails on fine-tuned models | 🟡 | M3 | Imported models get the guardrail on InvokeModel (blocks read from `amazon-bedrock-guardrailAction`, recorded live on a base model); SageMaker endpoints raise. 🔴 live run on an imported model (with TR-18) |
+| SV-17 | Bedrock Guardrails on fine-tuned models | ✅ | M3 | Imported models and SageMaker endpoints check the prompt and the answer with ApplyGuardrail (InvokeModel rejects OpenAI bodies with a guardrail, live 2026-10-30); a blocked prompt never reaches the model, streams are buffered. Live 2026-10-30 on an imported Qwen3-0.6B: block, allow, stream, trace |
 
 ### 2.7 Operations, cost and observability
 
@@ -206,7 +206,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | OP-5 | Serving metrics (latency, tokens, errors) | ✅ | M4 | `LLM.metrics(hours)` / `skyhammer metrics NAME`: CloudWatch invocations, avg/p50/p99 latency, tokens, client/server errors, throttles, for Bedrock (by invoked ID) and SageMaker inference components. Verified live 2026-10-29 |
 | OP-6 | Alerts / budgets | ⬜ | M5 | AWS Budgets + CloudWatch alarms from specs |
 | OP-7 | Audit log | ✅ (AWS) | M0 | CloudTrail, no work needed; document it |
-| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅; 🔴 live cross-region run. Today the only cross-region route is Qwen3-32B RFT on Bedrock (us-west-2); other cross-region training can't serve on demand, so the router keeps it in us-east-1 on SageMaker |
+| OP-8 | Multi-region / cross-region routing | 🟡 | M3 | Routing + 2-region bootstrap ✅; 🔴 live cross-region run. No cross-region training route exists today: Bedrock RFT of Qwen3-32B / GPT-OSS (us-west-2) is only offered through the OpenAI-compatible fine-tuning API (bedrock-mantle), not `CreateModelCustomizationJob` (rejected live 2026-10-30), so those routes were removed; Llama Bedrock SFT (us-west-2) needs provisioned throughput to serve. Next: a bedrock-mantle backend |
 
 ### 2.8 Security and enterprise
 
@@ -264,16 +264,16 @@ schemas, and text tool-call recovery. SI-13 batch verified live (100/100).
 Verified live 2026-10-29: SV-4/5/6/13 SageMaker endpoints (deploy 8 min, scale to zero after
 23 min idle, 11 min cold start, move to Bedrock), TR-6 Nova distillation, TR-7 open-weight
 distillation, EV-6 managed eval jobs, EV-7, DA-6 tokenizer counts, DA-7, DA-8 lineage,
-PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: SI-19 base-model endpoints (blocked
-by GPU capacity → SV-18), TR-3 full-FT quality, TR-18 user weights live, EV-9 MLflow
-mirroring, SV-17 guardrails on an imported model, OP-8 live cross-region.
+PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: EV-9 MLflow mirroring, OP-8 live cross-region (needs a bedrock-mantle
+backend). Verified live 2026-10-30: DA-3, SI-19, SI-20, SI-22, SV-17, SV-18, TR-3, TR-18.
 
 ### M4: preference and RL training, production serving (in progress)
 Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python reward
 (registered as a Hub evaluator), TR-13 RL runtime/cost cap, EV-4 grader Lambdas, EV-5 LLM
-judges, OP-5 serving metrics. Remaining: TR-9 Nova RFT, TR-11 RLAIF, TR-15/16 checkpoints
-and continued tuning, SV-8 multi-LoRA, SV-18 GPU capacity fallback, SE-4/5 IAM + VPC,
-DX-12/13 docs, PK-5 nightly.
+judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
+RFT (built, live run pending), TR-11 RLAIF, TR-15/16 checkpoints
+and continued tuning, SV-8 multi-LoRA, SE-4/5 IAM + VPC,
+DX-12 progress/notebook reprs, PK-5 nightly.
 
 ### M5: enterprise and scale
 SV-10 provisioned throughput, SV-11 traffic splitting, SV-12 environments/aliases,

@@ -230,10 +230,10 @@ CATALOG: dict[str, ModelEntry] = {
                 params_b=float(size.removesuffix("b")),
                 family="qwen",
                 display_name=f"Qwen3 {size.upper()}",
-                capabilities=[
-                    *([_bedrock(Technique.RFT, "qwen.qwen3-32b", _W2)] if size == "32b" else []),
-                    *_sm(_SM_ALL, f"huggingface-reasoning-qwen3-{sm_size}"),
-                ],
+                # Bedrock RFT of Qwen3-32B runs only through the OpenAI-compatible
+                # fine-tuning API (bedrock-mantle), not CreateModelCustomizationJob, which
+                # rejects it ("model identifier is invalid", live 2026-10-30).
+                capabilities=_sm(_SM_ALL, f"huggingface-reasoning-qwen3-{sm_size}"),
                 bedrock_serving_regions=_CMI,
             )
             for size, sm_size in [
@@ -270,10 +270,8 @@ CATALOG: dict[str, ModelEntry] = {
             params_b=21,
             family="gpt-oss",
             display_name="GPT-OSS 20B",
-            capabilities=[
-                _bedrock(Technique.RFT, "openai.gpt-oss-20b", _W2),
-                *_sm(_SM_ALL, "openai-reasoning-gpt-oss-20b"),
-            ],
+            # Bedrock RFT of GPT-OSS is OpenAI-compatible-API only (see Qwen3-32B above).
+            capabilities=_sm(_SM_ALL, "openai-reasoning-gpt-oss-20b"),
             bedrock_serving_regions=_E1,  # GPT-OSS import is us-east-1 only
         ),
         # Not importable into Bedrock (architecture unsupported): served from SageMaker.
