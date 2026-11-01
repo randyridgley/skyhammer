@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,7 +15,9 @@ from skyhammer.config import Settings, get_settings
 from skyhammer.errors import BootstrapMissingError, ConfigError
 
 _BOTO_CONFIG = Config(
-    retries={"mode": "adaptive", "max_attempts": 10}, user_agent_extra="skyhammer"
+    retries={"mode": "adaptive", "max_attempts": 10},
+    user_agent_extra="skyhammer",
+    max_pool_connections=64,  # AsyncLLM shares one client across worker threads
 )
 
 
@@ -48,6 +51,7 @@ class Session:
             profile_name=self.settings.profile, region_name=self.settings.region
         )
         self._resources: dict[str, Resources] = {}
+        self._client_lock = threading.Lock()  # boto3 sessions aren't thread-safe
         if self.settings.api_key:
             # botocore uses this bearer token for Bedrock/Bedrock Runtime clients.
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self.settings.api_key
@@ -61,7 +65,8 @@ class Session:
 
     def client(self, service: str, region: str | None = None) -> Any:
         boto: Any = self.boto  # service name is dynamic; skip boto3-stubs overloads
-        return boto.client(service, region_name=region or self.region, config=_BOTO_CONFIG)
+        with self._client_lock:
+            return boto.client(service, region_name=region or self.region, config=_BOTO_CONFIG)
 
     def stack_outputs(self, region: str | None = None) -> dict[str, str] | None:
         cfn = self.client("cloudformation", region=region)

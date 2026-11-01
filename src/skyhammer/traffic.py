@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 from skyhammer.errors import SkyhammerError
 
 if TYPE_CHECKING:
-    from skyhammer.inference import ChatCompletion, ChatCompletionChunk, Stream
+    from skyhammer.inference import ChatCompletionChunk, Stream, Usage
     from skyhammer.llm import LLM
     from skyhammer.session import Session
 
@@ -97,6 +98,7 @@ class TrafficSplit:
         self.salt = salt
         self._rng = rng
         self.stats: dict[str, VariantStats] = {name: VariantStats() for name in self.weights}
+        self._lock = threading.Lock()  # stats and the model cache are shared across threads
         self.chat = _SplitChat(self)
 
     def __repr__(self) -> str:
@@ -104,11 +106,12 @@ class TrafficSplit:
         return f"TrafficSplit({{{parts}}})"
 
     def llm(self, name: str) -> LLM:
-        if name not in self._llms:
-            from skyhammer.environments import resolve_llm
+        with self._lock:
+            if name not in self._llms:
+                from skyhammer.environments import resolve_llm
 
-            self._llms[name] = resolve_llm(name, session=self._session)
-        return self._llms[name]
+                self._llms[name] = resolve_llm(name, session=self._session)
+            return self._llms[name]
 
     def choose(self, sticky_key: str | None = None) -> str:
         point = sticky_point(sticky_key, self.salt) if sticky_key is not None else self._rng()
@@ -149,44 +152,48 @@ class _SplitCompletions:
         that answered. ``sticky_key`` pins a user to one model."""
         split = self._split
         name = split.choose(sticky_key)
-        stats = split.stats[name]
-        stats.calls += 1
+        stats, lock = split.stats[name], split._lock
+        with lock:
+            stats.calls += 1
         started = time.monotonic()
         try:
             result = split.llm(name).chat.completions.create(
                 messages=messages, stream=stream, **params
             )
         except Exception:
-            stats.errors += 1
+            with lock:
+                stats.errors += 1
             raise
         if stream:
-            return _tracked_stream(result, name, stats, started)
-        stats.latency_s += time.monotonic() - started
-        _add_usage(stats, result)
+            return _tracked_stream(result, name, stats, started, lock)
+        with lock:
+            stats.latency_s += time.monotonic() - started
+            _add_usage(stats, result.usage)
         result.variant = name
         return result
 
 
-def _add_usage(stats: VariantStats, result: ChatCompletion) -> None:
-    stats.prompt_tokens += result.usage.prompt_tokens
-    stats.completion_tokens += result.usage.completion_tokens
-    stats.cost_usd += result.usage.cost_usd or 0.0
+def _add_usage(stats: VariantStats, usage: Usage) -> None:
+    stats.prompt_tokens += usage.prompt_tokens
+    stats.completion_tokens += usage.completion_tokens
+    stats.cost_usd += usage.cost_usd or 0.0
 
 
-def _tracked_stream(stream: Stream, name: str, stats: VariantStats, started: float) -> Stream:
+def _tracked_stream(
+    stream: Stream, name: str, stats: VariantStats, started: float, lock: threading.Lock
+) -> Stream:
     stream.variant = name
     inner = stream._chunks
 
     def chunks() -> Iterator[ChatCompletionChunk]:
         first = True
         for chunk in inner:
-            if first:
-                stats.latency_s += time.monotonic() - started
-                first = False
-            if chunk.usage:
-                stats.prompt_tokens += chunk.usage.prompt_tokens
-                stats.completion_tokens += chunk.usage.completion_tokens
-                stats.cost_usd += chunk.usage.cost_usd or 0.0
+            with lock:
+                if first:
+                    stats.latency_s += time.monotonic() - started
+                    first = False
+                if chunk.usage:
+                    _add_usage(stats, chunk.usage)
             yield chunk
 
     stream._chunks = chunks()

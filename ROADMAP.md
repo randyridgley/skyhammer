@@ -51,7 +51,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DX-5 | Declarative specs (train → deploy → eval) | ✅ | M1.5 | Live 2026-10-29: submit `--no-wait` → reattach → deploy → eval → re-apply reused deployment |
 | DX-6 | OpenAI-compatible chat (non-streaming) | ✅ | M1 | Converse (Nova) + InvokeModel OpenAI body (imported) |
 | DX-7 | **Streaming** responses | ✅ | M2 | Shipped as SI-6 |
-| DX-8 | Async client (`AsyncLLM`) | ⬜ | M5 | aioboto3 or thread offload; concurrency limits |
+| DX-8 | Async client (`AsyncLLM`) | ✅ | M5 | Thread offload (boto3 has no asyncio); `max_concurrency` semaphore, streams hold a slot until read or closed; envs and splits work; verified live 2026-11-01 |
 | DX-9 | Tool calling / function calling passthrough | ✅ | M2 | Shipped as SI-7 |
 | DX-10 | Structured outputs (JSON schema) | ✅ | M2 | Shipped as SI-8 |
 | DX-11 | Reasoning controls (Qwen3 `<think>`, effort) | ✅ | M2 | Shipped as SI-9 (Qwen3 `<think>` split into reasoning_content) |
@@ -275,8 +275,8 @@ RFT (built, live run pending), TR-11 RLAIF, TR-15 (checkpoint resume), SE-5 live
 PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
-Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30). Remaining: SV-10
-provisioned throughput, DX-8 async, DX-14 framework adapters, TR-14 CPT, DA-11
+Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30), DX-8 async client (2026-11-01).
+Remaining: SV-10 provisioned throughput, DX-14 framework adapters, TR-14 CPT, DA-11
 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
 PK-7 **PyPI 1.0**.
 

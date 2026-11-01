@@ -218,6 +218,10 @@ Overrides for platform users on every `create_*_job`: `backend=`,
   per environment, the target models with weights plus the last 20 changes for rollback.
   Traffic splits are applied client-side per call (`skyhammer.traffic`), since targets
   can span Bedrock, SageMaker and bedrock-mantle.
+* `AsyncLLM` (`skyhammer.aio`) offloads the sync client to a thread pool instead of using
+  aioboto3, so every inference path (Converse, InvokeModel, SageMaker, mantle SigV4,
+  guardrails, cost tracking) stays one implementation. A semaphore caps in-flight requests;
+  shared state (boto3 client creation, spend, split stats, price cache) is lock-guarded.
 
 ### 3.4 Inference shim
 

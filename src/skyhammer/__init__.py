@@ -1,5 +1,6 @@
 """skyhammer: fine-tune Amazon Nova and open-weight models on AWS, served by Bedrock."""
 
+from skyhammer.aio import AsyncLLM
 from skyhammer.auth import generate_api_key, openai_client
 from skyhammer.batch import BatchJob
 from skyhammer.catalog import CATALOG, Technique, TrainingType
@@ -27,6 +28,7 @@ __version__ = "0.1.0"
 __all__ = [
     "CATALOG",
     "LLM",
+    "AsyncLLM",
     "BatchJob",
     "CostLimitExceededError",
     "Dataset",

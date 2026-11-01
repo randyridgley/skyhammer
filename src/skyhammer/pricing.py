@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -250,6 +251,7 @@ class InferencePrices:
     """Per-token prices for serverless Bedrock models, from the AWS Price List API."""
 
     _cache: ClassVar[dict[str, InferencePrices]] = {}
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.index: dict[tuple[str, str, str], dict[str, float]] = {}
@@ -261,9 +263,10 @@ class InferencePrices:
     @classmethod
     def for_session(cls, session: Session) -> InferencePrices:
         region = session.region
-        if region not in cls._cache:
-            cls._cache[region] = cls(_load_inference_rows(session, region))
-        return cls._cache[region]
+        with cls._lock:  # concurrent first calls load the price list once
+            if region not in cls._cache:
+                cls._cache[region] = cls(_load_inference_rows(session, region))
+            return cls._cache[region]
 
     def match(self, model_name: str) -> str | None:
         """Price-list name for a Bedrock model name. Names may differ only by neutral tokens
@@ -379,13 +382,15 @@ class SpendTracker:
     total_usd: float = 0.0
     by_model: dict[str, float] = field(default_factory=dict)
     unpriced_calls: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def record(self, model: str, usd: float | None) -> None:
-        if usd is None:
-            self.unpriced_calls += 1
-            return
-        self.total_usd += usd
-        self.by_model[model] = self.by_model.get(model, 0.0) + usd
+        with self._lock:
+            if usd is None:
+                self.unpriced_calls += 1
+                return
+            self.total_usd += usd
+            self.by_model[model] = self.by_model.get(model, 0.0) + usd
 
     def check(self) -> None:
         if self.max_spend_usd is not None and self.total_usd >= self.max_spend_usd:

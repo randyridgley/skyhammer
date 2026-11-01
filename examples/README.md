@@ -30,6 +30,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [11_multimodal_and_completions.py](11_multimodal_and_completions.py) | Images, documents, video (inline or S3), and the completions API | SI-20, SI-23 |
 | [29_guardrails.py](29_guardrails.py) | Block topics or content on any call, including fine-tuned models and endpoints; `content_filter` and traces | SI-22, SV-17 |
 | [32_responses_api.py](32_responses_api.py) | OpenAI Responses API on any model: `previous_response_id` turns, function tools, streaming events; native on bedrock-runtime/mantle, emulated elsewhere | SI-24 |
+| [33_async_client.py](33_async_client.py) | Async client (`AsyncLLM`): `await` chat, embeddings, rerank and Responses calls; `asyncio.gather` with a concurrency limit; `async for` streams | DX-8 |
 | [12_api_keys_and_openai_client.py](12_api_keys_and_openai_client.py) | Bedrock API keys; the OpenAI SDK against Bedrock | SI-16, SI-17 |
 | [13_model_discovery_and_quotas.py](13_model_discovery_and_quotas.py) | List models and routes, quotas, throttling errors | SI-4, SI-18 |
 
