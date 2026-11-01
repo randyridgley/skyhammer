@@ -15,12 +15,12 @@ a request already sent finishes in the background.
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from skyhammer.errors import SkyhammerError
+from skyhammer.target import Target
 
 if TYPE_CHECKING:
     from skyhammer.embeddings import EmbeddingResponse, RerankResponse
@@ -112,11 +112,7 @@ class AsyncLLM:
     ) -> None:
         if max_concurrency < 1:
             raise SkyhammerError("max_concurrency must be at least 1")
-        self._model = model
-        self._session = session
-        self._target: Any = None
-        self._chat: Any = None
-        self._resolve_lock = threading.Lock()
+        self._target = Target(model, session)
         self.max_concurrency = max_concurrency
         self._slots = asyncio.Semaphore(max_concurrency)
         self._pool = ThreadPoolExecutor(max_concurrency, thread_name_prefix="skyhammer")
@@ -126,44 +122,18 @@ class AsyncLLM:
         self.responses = _AsyncResponses(self)
 
     def __repr__(self) -> str:
-        name = self._model if isinstance(self._model, str) else repr(self._model)
-        return f"AsyncLLM({name}, max_concurrency={self.max_concurrency})"
+        return f"AsyncLLM({self._target.name}, max_concurrency={self.max_concurrency})"
 
     @property
     def sync(self) -> Any:
         """The ``LLM`` or ``TrafficSplit`` that serves the calls (resolved now if needed)."""
-        return self._resolve()
-
-    def _resolve(self) -> Any:
-        with self._resolve_lock:
-            if self._target is None:
-                self._target = _resolve(self._model, self._session)
-            return self._target
+        return self._target.resolve()
 
     def _chat_client(self) -> Any:
-        """One ``Chat`` per model, reused so every call shares a client and its connections.
-        A split picks its model per call, so it is asked each time."""
-        from skyhammer.traffic import TrafficSplit
-
-        target = self._resolve()
-        if isinstance(target, TrafficSplit):
-            return target.chat
-        with self._resolve_lock:
-            if self._chat is None:
-                self._chat = target.chat
-            return self._chat
+        return self._target.chat()
 
     def _llm(self, feature: str) -> LLM:
-        from skyhammer.traffic import TrafficSplit
-
-        target = self._resolve()
-        if isinstance(target, TrafficSplit):
-            raise SkyhammerError(
-                f"{feature} needs one model, but {self._model} splits traffic; "
-                "use chat.completions or pick a model with .sync.llm(name)"
-            )
-        llm: LLM = target
-        return llm
+        return self._target.llm(feature)
 
     async def _offload(self, fn: Callable[..., T], *args: Any) -> T:
         """Run ``fn`` on the pool without taking a slot (for work inside a held slot)."""
@@ -206,18 +176,6 @@ class AsyncLLM:
 
     async def __aexit__(self, *exc: object) -> None:
         await self.aclose()
-
-
-def _resolve(model: Any, session: Session | None) -> Any:
-    from skyhammer.environments import Environment, is_ref, resolve_llm
-
-    if isinstance(model, Environment):
-        return model.traffic()
-    if isinstance(model, str):
-        if is_ref(model):
-            return Environment(model, session=session).traffic()
-        return resolve_llm(model, session=session)
-    return model  # an LLM or a TrafficSplit
 
 
 class _AsyncCompletions:

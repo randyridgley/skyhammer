@@ -57,7 +57,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DX-11 | Reasoning controls (Qwen3 `<think>`, effort) | ✅ | M2 | Shipped as SI-9 (Qwen3 `<think>` split into reasoning_content) |
 | DX-12 | Rich progress / notebook reprs | ✅ | M4 | `job.metrics()` (per-step loss etc. from Bedrock CSVs, SageMaker metrics JSONL, bedrock-mantle events); `job.wait(progress=True)` and `skyhammer jobs wait` print stage changes and the loss sparkline; `skyhammer jobs metrics`; notebook views for jobs (loss curve SVG), validation reports and cost estimates. Live 2026-10-30: Nova Micro job loss 3.96 → 0.54 `█▅▃▂▁▁` (recorded as a fixture) |
 | DX-13 | Docs site + cookbook examples | ✅ | M4 | Material for MkDocs generated from docstrings + `examples/` (a guide page per example: SFT, DPO, RL, distill, eval, BYO weights); published to GitHub Pages on every push to `main` |
-| DX-14 | LangChain / LlamaIndex / LiteLLM adapters | ⬜ | M5 | Thin wrappers over `LLM.chat` |
+| DX-14 | LangChain / LlamaIndex / LiteLLM adapters | ✅ | M5 | `skyhammer.integrations`: LangChain chat model (tools, structured output, streaming), LlamaIndex function-calling LLM (FunctionAgent), LiteLLM `skyhammer/` provider; optional extras; verified live 2026-11-01 |
 
 ### 2.2 Data
 
@@ -275,9 +275,9 @@ RFT (built, live run pending), TR-11 RLAIF, TR-15 (checkpoint resume), SE-5 live
 PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
-Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30), DX-8 async client (2026-11-01).
-Remaining: SV-10 provisioned throughput, DX-14 framework adapters, TR-14 CPT, DA-11
-synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
+Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
+DX-8 async client, DX-14 framework adapters (2026-11-01). Remaining: SV-10 provisioned
+throughput, TR-14 CPT, DA-11 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
 PK-7 **PyPI 1.0**.
 
 ### M6: frontier

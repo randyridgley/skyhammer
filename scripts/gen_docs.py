@@ -597,7 +597,14 @@ def main(out: Path) -> None:
     all_modules = sorted(
         f"skyhammer.{p.stem}" for p in SRC.glob("*.py") if p.stem not in SKIP_MODULES
     )
-    modules = sorted({m for m, _ in public.values() if m in all_modules})
+    # Framework adapters are imported from their own modules, not from ``skyhammer``.
+    adapters = sorted(
+        f"skyhammer.integrations.{p.stem}"
+        for p in (SRC / "integrations").glob("*.py")
+        if not p.stem.startswith("_")
+    )
+    all_modules += adapters
+    modules = sorted({m for m, _ in public.values() if m in all_modules} | set(adapters))
     internals = [m for m in all_modules if m not in modules]
     for module in all_modules:
         site.write(ref_page(module), reference_page(module, examples, public))
