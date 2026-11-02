@@ -57,7 +57,7 @@ from skyhammer.jobs import (
     ModelRef,
     TrainingRequest,
 )
-from skyhammer.serving import EndpointDeployer, EndpointNames, Scaling
+from skyhammer.serving import EndpointDeployer, EndpointNames, Scaling, optimization_environment
 from skyhammer.session import Session
 
 log = logging.getLogger(__name__)
@@ -801,6 +801,11 @@ class SageMakerServerlessBackend:
         if not model.artifacts_uri:
             raise SkyhammerError(f"{model.name} has no trained weights to serve")
         if opts.on:
+            if opts.quantize or opts.speculative:
+                raise SkyhammerError(
+                    "Adapters run on the shared endpoint's settings; set quantize/speculative "
+                    "when deploying the base with adapters=True"
+                )
             names = EndpointNames.for_adapter(opts.on, opts.name)
             adapter_dir = resolve_adapter_dir(
                 self.session.client("s3", region=self.region), model.artifacts_uri
@@ -810,13 +815,18 @@ class SageMakerServerlessBackend:
             )
             return DeploymentRef(names.deployment_name, arn, "Active")
         names = EndpointNames.for_deployment(opts.name)
+        hosting = self.hosting_for(model.base_alias)
+        environment = optimization_environment(
+            hosting, quantize=opts.quantize, speculative=opts.speculative
+        )
         model_dir = resolve_model_dir(
             self.session.client("s3", region=self.region), model.artifacts_uri
         )
         arn = EndpointDeployer(self.session, self.region).deploy(
             names,
             model_dir=model_dir,
-            hosting=self.hosting_for(model.base_alias),
+            hosting=hosting,
+            environment=environment,
             scaling=opts.scaling or Scaling(),
             instance_type=opts.instance_type,
             params_b=_params_b(model.base_alias),
@@ -855,10 +865,17 @@ class SageMakerServerlessBackend:
             hosting = self.hosting_for(alias)
             if opts.scaling is None:
                 scaling = Scaling(min_copies=1)
+        environment = optimization_environment(
+            hosting,
+            quantize=opts.quantize,
+            speculative=opts.speculative,
+            network_isolation=hub_model.base.network_isolation,
+        )
         arn = EndpointDeployer(self.session, self.region).deploy(
             names,
             model_dir=hub_model.base.artifact_uri,
             hosting=hosting,
+            environment=environment,
             # No HubAccessConfig: it's for private curated hubs; with SageMakerPublicHub
             # content CreateModel rejects it ("Invalid HubContentArn", seen live 2026-10-29).
             accept_eula=hub_model.gated,

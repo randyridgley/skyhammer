@@ -189,7 +189,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-11 | Traffic splitting / A-B routers | ✅ | M5 | `TrafficSplit({...})` / `Environment(...).traffic()`: weighted pick per call, `sticky_key=` pins a user (salted hash), `response.variant` names the model, `summary()` compares calls, errors, latency, tokens and cost. Client-side because targets span backends; SageMaker variant weights can't route between inference components. Live 2026-10-30 (Nova Micro vs Lite canary, SDK and `skyhammer chat app@env`) |
 | SV-12 | Environments & promotion (dev → prod) | ✅ | M5 | `Environment("support-qwen@prod")`: `promote`, `split` (canary), `rollback`, `history`, `delete`; `LLM.get("app@env")` resolves it; `skyhammer env list/show/promote/split/rollback/delete`. Stored in `manifests/envs/<app>.json` (last writer wins, 20 changes of history). Live 2026-10-30 |
 | SV-13 | Move SageMaker-served model to Bedrock | ✅ | M3 | `ft.deploy(serving='bedrock')` imports stored weights (pre-flight checked), then removes the endpoint. Live: 14.8 min import, first call 2 min (CMI warm-up), chat works |
-| SV-14 | Quantization / speculative decoding | ⬜ | M6 | LMI options on SageMaker; not exposed by Bedrock CMI |
+| SV-14 | Quantization / speculative decoding | 🟡 | M6 | `deploy(quantize="fp8"\|"bitsandbytes", speculative={method, model, num_speculative_tokens, ...})` on SageMaker endpoints (fine-tunes and dedicated base models): LMI vLLM `OPTION_QUANTIZE` / `OPTION_SPECULATIVE_CONFIG` (LMI vLLM user guide). Checked before deploying: LMI container only, quantize values, speculative method and token count, draft model required except `ngram`, no Hub download under network isolation; adapters inherit the shared endpoint's settings; Bedrock serving and provisioned throughput refuse them (CMI doesn't expose them). Redeploying a name with different options fails instead of silently keeping the old model. Instance choice stays AWS's recommendation (pass a smaller `instance_type`). SageMaker's managed CreateOptimizationJob (AWQ, EAGLE training) not used. 🔴 live run pending (Qwen3 8B, ~$0.35) |
 | SV-18 | GPU capacity fallback | ✅ | M4 | SageMaker instance pools: AWS's recommended instance first, then up to 4 GPU types with the same GPU count, at least the validated host's RAM and vCPUs, and enough GPU memory for the model; `instance_type=[...]` sets the order, a string pins one; 20-min provisioning timeout. Live 2026-10-30: ml.g6e.2xlarge had no capacity three times; endpoints came up on ml.g5.xlarge (2 min) and ml.g6.4xlarge (3 min), and one attempt with no capacity anywhere failed cleanly after 20 min |
 | SV-15 | Embedding / rerank model fine-tuning | ➖ | — | CMI doesn't support embedding models; revisit |
 | SV-16 | Prompt caching | ✅ | M3 | Same feature as SI-21 |
@@ -285,7 +285,8 @@ pending). Remaining: OP-4 cost reporting (confirm), PK-7 **PyPI 1.0**.
 TR-17 BYO training code built (live run pending). DA-12 dataset mixing built (Nova Forge
 mixing needs a subscription). DA-10 multimodal data and TR-20 Nova vision fine-tuning built
 (live run pending; SageMaker vision models wait on their data format). TR-12 agentic RL
-built (live run pending). Remaining: SV-14 quantization/speculative decoding.
+and SV-14 quantization/speculative decoding built (live runs pending). M6 is code-complete
+apart from live verification.
 
 ## 4. Known risks and open questions
 

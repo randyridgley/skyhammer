@@ -50,6 +50,9 @@ class DeployOptions:
     # deploy a base model's endpoint ready to host adapters (``adapters``).
     on: str | None = None
     adapters: bool = False
+    # SageMaker endpoints (LMI vLLM): runtime quantization and speculative decoding (SV-14).
+    quantize: str | None = None
+    speculative: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

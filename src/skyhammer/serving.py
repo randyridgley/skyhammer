@@ -12,6 +12,7 @@ Everything here is a pure request builder so it can be validated against botocor
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -424,6 +425,67 @@ def serving_environment(hosting: HostingConfig, *, merged: bool = True) -> dict[
     return env
 
 
+# Runtime quantization the LMI vLLM container applies while loading bf16 weights (LMI docs,
+# vLLM user guide): fp8 halves weight memory (W8A8 on L4/L40S/H100, weight-only via Marlin
+# on A10G/A100); bitsandbytes is 4-bit. Pre-quantized (AWQ/GPTQ) weights need nothing.
+QUANTIZE = ("fp8", "bitsandbytes")
+OPTIMIZATION_KEYS = ("OPTION_QUANTIZE", "OPTION_SPECULATIVE_CONFIG")
+SPECULATIVE_METHODS = ("ngram", "eagle", "eagle3", "draft_model", "mtp")
+
+
+def optimization_environment(
+    hosting: HostingConfig,
+    *,
+    quantize: str | None = None,
+    speculative: dict[str, Any] | None = None,
+    network_isolation: bool = False,
+) -> dict[str, str]:
+    """``OPTION_*`` overrides for quantization and speculative decoding (SV-14).
+
+    ``speculative`` is vLLM's speculative config: ``{"method": "ngram",
+    "num_speculative_tokens": 4, "prompt_lookup_max": 4}`` drafts from the prompt itself
+    (no extra model), or ``{"model": "<HF id or S3 path>", "method": "eagle3",
+    "num_speculative_tokens": 3}`` uses a draft model."""
+    if quantize is None and speculative is None:
+        return {}
+    if "djl-inference" not in hosting.image_uri:
+        raise SkyhammerError(
+            f"Quantization and speculative decoding are LMI (vLLM) container options; this "
+            f"model serves from {hosting.image_uri.rsplit('/', 1)[-1]}"
+        )
+    env: dict[str, str] = {}
+    if quantize is not None:
+        if quantize not in QUANTIZE:
+            raise SkyhammerError(
+                f"quantize={quantize!r}: choose {' or '.join(QUANTIZE)} (pre-quantized "
+                "AWQ/GPTQ weights are detected without it)"
+            )
+        env["OPTION_QUANTIZE"] = quantize
+    if speculative is not None:
+        spec = dict(speculative)
+        method = spec.get("method")
+        if method is not None and method not in SPECULATIVE_METHODS:
+            raise SkyhammerError(
+                f"speculative method {method!r}: choose one of {', '.join(SPECULATIVE_METHODS)}"
+            )
+        if method != "ngram" and not spec.get("model"):
+            raise SkyhammerError(
+                "speculative decoding needs a draft 'model' (or method='ngram', which drafts "
+                "from the prompt)"
+            )
+        n = spec.get("num_speculative_tokens")
+        if not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 16:
+            raise SkyhammerError("speculative needs num_speculative_tokens between 1 and 16")
+        draft = str(spec.get("model") or "")
+        if network_isolation and draft and not draft.startswith(("s3://", "/opt/ml/")):
+            raise SkyhammerError(
+                f"This model's endpoint runs with network isolation, so it can't download "
+                f"{draft!r}; use method='ngram' or a draft model already in the model files"
+            )
+        env["OPTION_SPECULATIVE_CONFIG"] = json.dumps(spec, sort_keys=True)
+    return env
+
+
 def model_request(
     names: EndpointNames,
     *,
@@ -510,6 +572,7 @@ class EndpointDeployer:
         accept_eula: bool = False,
         network_isolation: bool = False,
         merged: bool = True,
+        environment: dict[str, str] | None = None,
         scaling: Scaling,
         instance_type: str | list[str] | None = None,
         params_b: float | None = None,
@@ -521,13 +584,24 @@ class EndpointDeployer:
         res = self.session.resources_for(self.region)
         aws_tags = [{"Key": k, "Value": v} for k, v in (tags or {}).items()]
         choice = InstanceChoice.from_hosting(hosting, instance_type, params_b=params_b)
-        if not self._exists(lambda: self.sm.describe_model(ModelName=names.model)):
+        env = {**serving_environment(hosting, merged=merged), **(environment or {})}
+        existing = self._model_environment(names)
+        if existing is not None:
+            # Only the options Skyhammer sets: AWS's hosting defaults may change over time.
+            changed = sorted(k for k in OPTIMIZATION_KEYS if existing.get(k) != env.get(k))
+            if changed:
+                raise SkyhammerError(
+                    f"Deployment {names.deployment_name} already exists with different "
+                    f"serving options ({', '.join(changed)}); delete it first or deploy "
+                    "under another name"
+                )
+        else:
             log(f"creating model {names.model}")
             self.sm.create_model(
                 **model_request(
                     names,
                     image_uri=hosting.image_uri,
-                    environment=serving_environment(hosting, merged=merged),
+                    environment=env,
                     model_dir=model_dir,
                     role_arn=res.sagemaker_role_arn,
                     tags=aws_tags,
@@ -577,6 +651,17 @@ class EndpointDeployer:
             )
         self.apply_scaling(names, scaling)
         return str(self.sm.describe_endpoint(EndpointName=names.endpoint)["EndpointArn"])
+
+    def _model_environment(self, names: EndpointNames) -> dict[str, str] | None:
+        """The existing model's container environment, or None if there's no model."""
+        try:
+            model = self.sm.describe_model(ModelName=names.model)
+        except ClientError as e:
+            if _missing(e):
+                return None
+            raise
+        env: dict[str, str] = model.get("PrimaryContainer", {}).get("Environment", {})
+        return env
 
     def _wait_in_service(self, names: EndpointNames) -> None:
         try:

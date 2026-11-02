@@ -577,6 +577,8 @@ class LLM:
         commitment: str | None = None,
         max_hourly_usd: float | None = None,
         accept_commitment: bool = False,
+        quantize: str | None = None,
+        speculative: dict[str, Any] | None = None,
     ) -> LLM:
         """Make the model invocable.
 
@@ -599,7 +601,30 @@ class LLM:
         or not. ``max_hourly_usd`` is required and must cover the Price List rate (see
         ``skyhammer.provisioned.price``). ``commitment="1_month"`` or ``"6_months"`` is
         cheaper per hour but can't be cancelled, so it also needs ``accept_commitment=True``.
-        Deploying another fine-tune of the same base under an existing name swaps it in."""
+        Deploying another fine-tune of the same base under an existing name swaps it in.
+
+        Faster or smaller SageMaker endpoints (LMI vLLM): ``quantize="fp8"`` (half the
+        weight memory; ``"bitsandbytes"`` is 4-bit) quantizes the weights as they load, and
+        ``speculative={"method": "ngram", "num_speculative_tokens": 4}`` (or a draft
+        ``model``) drafts tokens to speed up decoding. AWS's recommended instance stays the
+        default; pass a smaller ``instance_type`` to use the memory quantization frees.
+        Bedrock serving doesn't expose either option."""
+        if quantize is not None or speculative is not None:
+            on_bedrock = (
+                DeploymentType(type) is DeploymentType.PROVISIONED
+                or (serving is not None and ServingTarget(serving) is ServingTarget.BEDROCK)
+                or (
+                    self.model_ref is not None
+                    and serving is None
+                    and self.model_ref.serving == ServingTarget.BEDROCK.value
+                )
+                or (self.model_ref is None and self.deployment_type == "serverless")
+            )
+            if on_bedrock:
+                raise UnsupportedParameterError(
+                    "quantize/speculative are SageMaker endpoint (LMI) options; Bedrock "
+                    "serving doesn't expose them. Deploy with serving='sagemaker'"
+                )
         if DeploymentType(type) is DeploymentType.PROVISIONED:
             return self._deploy_provisioned(
                 name,
@@ -618,6 +643,8 @@ class LLM:
                 instance_type=instance_type,
                 accept_eula=accept_eula,
                 adapters=adapters,
+                quantize=quantize,
+                speculative=speculative,
             )
         if adapters:
             raise SkyhammerError("adapters=True starts a shared base-model endpoint")
@@ -638,6 +665,8 @@ class LLM:
             scaling=Scaling.model_validate(scaling) if isinstance(scaling, dict) else scaling,
             instance_type=instance_type,
             on=on,
+            quantize=quantize,
+            speculative=speculative,
         )
         if on and (opts.scaling or instance_type):
             raise SkyhammerError("Adapters share the endpoint's scaling and instances")
@@ -830,10 +859,13 @@ class LLM:
         instance_type: str | list[str] | None,
         accept_eula: bool,
         adapters: bool = False,
+        quantize: str | None = None,
+        speculative: dict[str, Any] | None = None,
     ) -> LLM:
         """Base models: serverless needs no deploy; dedicated gets a SageMaker endpoint."""
+        tuned = quantize is not None or speculative is not None
         if self.deployment_type == "serverless" or (
-            self.deployment_type == "auto" and self.serverless_available()
+            self.deployment_type == "auto" and self.serverless_available() and not tuned
         ):
             log.info("%s is served serverless by Bedrock; no deployment needed", self.name)
             return self
@@ -844,6 +876,8 @@ class LLM:
             scaling=Scaling.model_validate(scaling) if isinstance(scaling, dict) else scaling,
             instance_type=instance_type,
             adapters=adapters,
+            quantize=quantize,
+            speculative=speculative,
             tags=tagging.build_tags(
                 {"name": name or entry.alias, "base-model": entry.alias, "kind": "dedicated-base"},
                 self.session.settings.tags,
