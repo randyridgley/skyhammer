@@ -298,9 +298,11 @@ def validate(
     count_tokens: TokenCounter | None = None,
     *,
     base_dir: Path | None = None,
+    source: str | None = None,
 ) -> ValidationReport:
     """``count_tokens`` is the model's tokenizer; without it counts are estimated.
-    ``base_dir`` resolves relative image and video paths (DA-10)."""
+    ``base_dir`` resolves relative image and video paths (DA-10); ``source`` is where the
+    rows came from (remote rows may not reference local files or other buckets)."""
     report = ValidationReport(technique=technique, total_rows=len(rows), limits=limits)
     report.exact_tokens = count_tokens is not None
     count = count_tokens or estimate_tokens
@@ -333,7 +335,7 @@ def validate(
                 )
             )
         media_problems = media.check(
-            record, limits, sft=technique is Technique.SFT, base_dir=base_dir
+            record, limits, sft=technique is Technique.SFT, base_dir=base_dir, source=source
         )
         if media_problems:
             report.issues.append(

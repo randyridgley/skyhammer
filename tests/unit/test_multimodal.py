@@ -12,7 +12,7 @@ from moto import mock_aws
 from skyhammer import Dataset
 from skyhammer.backends.bedrock import BedrockNativeBackend
 from skyhammer.catalog import Technique, get_model
-from skyhammer.errors import DatasetValidationError
+from skyhammer.errors import DatasetValidationError, SkyhammerError
 from skyhammer.session import Session
 
 # A real 1x1 PNG.
@@ -88,7 +88,7 @@ def test_media_limits(tmp_path: Path) -> None:
     big = tmp_path / "big.png"
     with big.open("wb") as f:
         f.truncate(11 * 2**20)
-    (tmp_path / "a.webp").write_bytes(b"RIFF")
+    (tmp_path / "a.webp").write_bytes(b"RIFF\0\0\0\0WEBPVP8 ")
 
     assert "text only" in errors(one(image(str(png))), "nova-micro")
     assert "text only" in errors(one(image(str(png))), "qwen3-0.6b")
@@ -190,3 +190,54 @@ def test_upload_stages_media_next_to_the_dataset(photos: Path, session: Session)
         assert ds.upload(backend, Technique.SFT) == uri  # idempotent
         assert s3.list_objects_v2(Bucket=bucket, Prefix="media/")["KeyCount"] == media
         assert ds.records()[0]["messages"][0]["content"][1]["image_url"]["url"] == "img/0.png"
+
+
+def test_rows_cant_pass_off_other_files_as_media(tmp_path: Path) -> None:
+    secret = tmp_path / "credentials"
+    secret.write_text("[default]\naws_secret_access_key = abc\n")
+    disguised = Dataset.from_records([row(image(str(secret), format="png"))] * 8, "x")
+    assert "contents aren't a png image" in errors(disguised)
+    fake_inline = "data:image/png;base64," + _b64(b"not an image at all")
+    assert "contents aren't a png image" in errors(
+        Dataset.from_records([row(image(fake_inline))] * 8, "x")
+    )
+
+
+def test_remote_datasets_cant_reach_local_files_or_other_buckets(tmp_path: Path) -> None:
+    png = tmp_path / "a.png"
+    png.write_bytes(PNG)
+
+    def remote(source: str, *media: dict[str, Any]) -> Dataset:
+        return Dataset("shared", list(enumerate([row(*media)] * 8, 1)), source=source)
+
+    from_s3 = "s3://data-bucket/sets/train.jsonl"
+    assert "can't use local files" in errors(remote(from_s3, image(str(png))))
+    assert "can't use local files" in errors(remote(from_s3, image(f"file://{png}")))
+    assert "can only use media in its own bucket" in errors(
+        remote(from_s3, image("s3://payroll/scan.png"))
+    )
+    assert "0 errors" in errors(remote(from_s3, image("s3://data-bucket/img/a.png")))
+    assert "can only use media in its own bucket" in errors(
+        remote("hf://someone/vqa", image("s3://data-bucket/img/a.png"))
+    )
+    inline = image("data:image/png;base64," + _b64())
+    assert "0 errors" in errors(remote("hf://someone/vqa", inline))
+    # Mixing keeps the restriction; local parts keep their own (relative) images.
+    (tmp_path / "local.jsonl").write_text(json.dumps(row(image("a.png"))) + "\n")
+    local = Dataset.from_file(tmp_path / "local.jsonl")
+    mixed = Dataset.mix({remote("hf://someone/vqa", inline): 1, local: 1}, n=16, repeat=True)
+    assert mixed.source == "hf://someone/vqa"
+    assert "can't use local files" in errors(mixed)
+    assert "0 errors" in errors(Dataset.mix({local: 1}, n=8, repeat=True))
+
+
+def test_upload_rechecks_files_changed_after_validation(photos: Path, session: Session) -> None:
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(
+            Bucket=session.settings.bucket or ""
+        )
+        ds = Dataset.from_file(photos)
+        ds.prepare(get_model("nova-lite"), Technique.SFT)
+        (photos.parent / "img" / "4.png").write_text("swapped for something else")
+        with pytest.raises(SkyhammerError, match="contents aren't a png image"):
+            ds.upload(BedrockNativeBackend(session), Technique.SFT)

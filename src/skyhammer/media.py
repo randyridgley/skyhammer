@@ -15,6 +15,12 @@ file size, one kind of media per dataset) before anything is uploaded. On upload
 and inline media go to the Skyhammer bucket under ``media/<sha256>.<ext>`` (content
 addressed, so each file uploads once) and S3 media from other buckets is copied there,
 because Bedrock reads training media only from the dataset's own bucket.
+
+Every file read is checked to really be the format it claims (by its first bytes), so a
+row can't get another local file uploaded by calling it an image. Rows from a remote
+source (``Dataset.from_s3``, ``from_hf``, or a mix including one) were written by someone
+else: they may use inline media and, for S3 datasets, objects in the dataset's own
+bucket, but not local files or other buckets your credentials can read.
 """
 
 from __future__ import annotations
@@ -97,6 +103,31 @@ class MediaRef:
         return path.read_bytes() if path is not None else None
 
 
+def sniff(head: bytes) -> set[str]:
+    """Formats the first bytes of a file are consistent with (empty if no media format).
+    Rows say what a file is; this checks it, so a row can't pass off another local file
+    (a credentials file, say) as an image and get it uploaded."""
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return {"png"}
+    if head.startswith(b"\xff\xd8\xff"):
+        return {"jpeg"}
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return {"gif"}
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return {"webp"}
+    if head[4:8] == b"ftyp":  # ISO media: MP4 and QuickTime share the container
+        return {"mp4", "mov"}
+    if head.startswith(b"\x1a\x45\xdf\xa3"):  # EBML: Matroska and WebM
+        return {"mkv", "webm"}
+    return set()
+
+
+def _content_problem(ref: MediaRef, head: bytes) -> str | None:
+    if ref.format in sniff(head):
+        return None
+    return f"{_short(ref.url)}: contents aren't a {ref.format} {ref.kind}"
+
+
 def _format(kind: str, url: str, explicit: str | None) -> str | None:
     formats = _FORMATS[kind]
     if explicit:
@@ -163,8 +194,27 @@ def kinds(record: Any) -> set[str]:
     return out
 
 
-def check(record: Any, limits: DatasetLimits, *, sft: bool, base_dir: Path | None) -> list[str]:
-    """Problems with a row's media against ``limits`` (empty when it has none)."""
+def remote_bucket(source: str | None) -> str | None:
+    """For a dataset read from S3, its bucket; "" for other remote sources (Hugging Face);
+    None for local files and datasets built in memory."""
+    if not source or "://" not in source:
+        return None
+    return source.removeprefix("s3://").split("/", 1)[0] if source.startswith("s3://") else ""
+
+
+def check(
+    record: Any,
+    limits: DatasetLimits,
+    *,
+    sft: bool,
+    base_dir: Path | None,
+    source: str | None = None,
+) -> list[str]:
+    """Problems with a row's media against ``limits`` (empty when it has none).
+
+    Rows from a remote ``source`` (S3, Hugging Face) were written by someone else, so they
+    may not point at files on this machine or at other S3 buckets your credentials can
+    read: only inline media and, for S3 datasets, objects in the dataset's own bucket."""
     found = list(media_parts(record))
     if not found:
         return []
@@ -190,6 +240,19 @@ def check(record: Any, limits: DatasetLimits, *, sft: bool, base_dir: Path | Non
         if ref.is_remote:
             problems.append(f"{ref.url}: download it first, or use a local path or s3:// URI")
             continue
+        remote = remote_bucket(source)
+        if remote is not None:
+            if ref.is_s3 and ref.url.removeprefix("s3://").split("/", 1)[0] != remote:
+                problems.append(
+                    f"{_short(ref.url)}: a dataset read from {source} can only use media in "
+                    "its own bucket"
+                )
+                continue
+            if not ref.is_s3 and not ref.is_inline:
+                problems.append(
+                    f"{_short(ref.url)}: a dataset read from {source} can't use local files"
+                )
+                continue
         if ref.format not in allowed.formats:
             problems.append(
                 f"{_short(ref.url)}: {ref.kind} format {ref.format or 'unknown'} isn't "
@@ -205,10 +268,18 @@ def check(record: Any, limits: DatasetLimits, *, sft: bool, base_dir: Path | Non
             )
             continue
         try:
-            size = path.stat().st_size if path is not None else len(ref.data(base_dir) or b"")
-        except SkyhammerError as e:
+            if path is not None:
+                size = path.stat().st_size
+                with path.open("rb") as f:
+                    head = f.read(16)
+            else:
+                data = ref.data(base_dir) or b""
+                size, head = len(data), data[:16]
+        except (SkyhammerError, OSError) as e:
             problems.append(str(e))
             continue
+        if ref.format in allowed.formats and (bad := _content_problem(ref, head)):
+            problems.append(bad)
         if size > allowed.max_mb * 2**20:
             problems.append(
                 f"{_short(ref.url)}: {size / 2**20:.1f} MB is over the {allowed.max_mb:g} MB "
@@ -225,9 +296,30 @@ def _short(url: str) -> str:
     return url if len(url) <= 60 else url[:40] + "..." + url[-12:]
 
 
-def digest(rows: list[Any], base_dir: Path | None) -> str | None:
-    """Hash of the local and inline media the rows point to, so changing an image's
-    contents makes a new dataset version (and a new job). None when there is none."""
+def absolutize(record: Any, base_dir: Path | None) -> Any:
+    """``record`` with relative local media paths made absolute against ``base_dir`` (for
+    rows moved into another dataset, such as a mix)."""
+    if base_dir is None or not any(True for _ in media_parts(record)):
+        return record
+    out = copy.deepcopy(record)
+    for _, part in media_parts(out):
+        ref = ref_of(part)
+        path = ref.local_path(base_dir)
+        if path is not None and not ref.url.startswith("file://"):
+            value = part[part["type"]]
+            if isinstance(value, dict):
+                value["url"] = str(path)
+            else:
+                part[part["type"]] = str(path)
+    return out
+
+
+def digest(rows: list[Any], base_dir: Path | None, source: str | None = None) -> str | None:
+    """Hash of the local media the rows point to, so changing an image's contents makes a
+    new dataset version (and a new job). None when there is none (or for remote datasets,
+    which can't use local files)."""
+    if remote_bucket(source) is not None:
+        return None
     h = hashlib.sha256()
     seen = False
     for record in rows:
@@ -253,6 +345,7 @@ def stage(
     bucket: str,
     kms_key_arn: str | None,
     base_dir: Path | None,
+    source: str | None = None,
 ) -> list[Record]:
     """Copies of ``records`` with every media reference uploaded to (or copied into)
     ``bucket`` and rewritten to ``{"url": "s3://...", "format": ..., "bucket_owner": ...}``.
@@ -274,10 +367,13 @@ def stage(
     def put(ref: MediaRef) -> str:
         assert ref.format is not None  # validated
         ext = _EXT.get(ref.format, ref.format)
+        remote = remote_bucket(source)
         if ref.is_s3:
             src_bucket, src_key = ref.url.removeprefix("s3://").split("/", 1)
             if src_bucket == bucket:
                 return ref.url
+            if remote is not None and src_bucket != remote:
+                raise SkyhammerError(f"{ref.url}: not in {source}'s bucket")
             etag = s3.head_object(Bucket=src_bucket, Key=src_key)["ETag"]
             name = hashlib.sha256(f"{ref.url}|{etag}".encode()).hexdigest()
             key = f"media/s3/{name}.{ext}"
@@ -289,8 +385,12 @@ def stage(
                     **extra,
                 )
             return f"s3://{bucket}/{key}"
+        if remote is not None and not ref.is_inline:
+            raise SkyhammerError(f"{ref.url}: a dataset read from {source} can't use local files")
         data = ref.data(base_dir)
         assert data is not None
+        if bad := _content_problem(ref, data[:16]):  # re-checked: files can change
+            raise SkyhammerError(bad)
         key = f"media/{hashlib.sha256(data).hexdigest()}.{ext}"
         if not exists(key):
             s3.put_object(Bucket=bucket, Key=key, Body=data, **extra)

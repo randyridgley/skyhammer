@@ -167,7 +167,9 @@ class Dataset:
         if messages_column != "messages":
             for r in records:
                 r["messages"] = r.pop(messages_column)
-        return cls.from_records(records, name or repo.replace("/", "-"))
+        ds = cls.from_records(records, name or repo.replace("/", "-"))
+        ds.source = f"hf://{repo}"
+        return ds
 
     @classmethod
     def from_records(cls, records: builtins.list[Record], name: str) -> Dataset:
@@ -245,7 +247,8 @@ class Dataset:
                     f"A {n}-row mix needs {count} rows from {ds.name!r}, which has "
                     f"{len(ds)}. Lower n, or pass repeat=True to use its rows more than once."
                 )
-            source = [r for _, r in ds._rows]
+            # Relative image paths keep pointing at the part's own files.
+            source = [media.absolutize(r, ds.base_dir) for _, r in ds._rows]
             taken: builtins.list[Any] = []
             while len(taken) < count:  # whole shuffled passes, then a partial one
                 rng.shuffle(source)
@@ -259,6 +262,10 @@ class Dataset:
             name or "+".join(ds.name for ds, _ in shares), builtins.list(enumerate(rows, 1))
         )
         mixed.mixture = mixture
+        # Rows from a remote source keep its media restrictions (skyhammer.media.check).
+        mixed.source = next(
+            (ds.source for ds, _ in shares if media.remote_bucket(ds.source) is not None), None
+        )
         return mixed
 
     # ---- identity ----
@@ -271,7 +278,9 @@ class Dataset:
             h.update(b"\n")
         # Rows reference image/video files by path; their contents are part of the version.
         if self._media_digest is _UNSET:
-            self._media_digest = media.digest([r for _, r in self._rows], self.base_dir)
+            self._media_digest = media.digest(
+                [r for _, r in self._rows], self.base_dir, self.source
+            )
         if self._media_digest:
             h.update(str(self._media_digest).encode())
         return h.hexdigest()
@@ -321,6 +330,7 @@ class Dataset:
             limits,
             tokenizer_counter(model.hf_repo),
             base_dir=self.base_dir,
+            source=self.source,
         )
         return self.report
 
@@ -381,7 +391,13 @@ class Dataset:
         if any(any(True for _ in media.media_parts(r)) for r in records):
             # Images and video go next to the dataset (Bedrock reads them from its bucket).
             records = media.stage(
-                records, backend.session, backend.region, res.bucket, res.kms_key_arn, self.base_dir
+                records,
+                backend.session,
+                backend.region,
+                res.bucket,
+                res.kms_key_arn,
+                self.base_dir,
+                self.source,
             )
         body = self._encode(backend, technique, records)
         digest = hashlib.sha256(body).hexdigest()
