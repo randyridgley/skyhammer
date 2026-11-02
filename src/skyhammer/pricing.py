@@ -137,6 +137,23 @@ def training_price(
     return TrainingPrice(usage_type=usage)
 
 
+def instance_price(session: Session, region: str, instance_type: str) -> TrainingPrice:
+    """On-demand SageMaker training price per instance-hour (``USE1-Train:ml.g5.2xlarge``);
+    an empty TrainingPrice when unknown or offline."""
+    prefix = _REGION_PREFIX.get(region)
+    if prefix is None:
+        return TrainingPrice()
+    usage = f"{prefix}-Train:{instance_type}"
+    try:
+        price = _lookup(session, "AmazonSageMaker", usage)
+    except Exception as e:  # no credentials, no network, throttling: estimate without price
+        log.debug("price lookup for %s failed: %s", usage, e)
+        return TrainingPrice(usage_type=usage)
+    if price is None or not price["unit"].lower().startswith("hr"):
+        return TrainingPrice(usage_type=usage)
+    return TrainingPrice(usd_per_hour=price["usd"], usage_type=usage)
+
+
 # ---------------------------------------------------------------- inference prices
 
 _INFERENCE_SERVICES = ("AmazonBedrock", "AmazonBedrockFoundationModels")

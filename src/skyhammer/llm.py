@@ -6,12 +6,13 @@ import logging
 import re
 from typing import Any
 
-from skyhammer import cost, pricing, registry
+from skyhammer import cost, pretrain, pricing, registry
 from skyhammer import tags as tagging
 from skyhammer.backends import DeploymentRef, DeploymentType, DeployOptions, get_backend
 from skyhammer.backends.sagemaker import resolve_model_dir
 from skyhammer.batch import BatchJob
 from skyhammer.catalog import (
+    CATALOG,
     BackendKind,
     ModelEntry,
     ServingTarget,
@@ -284,6 +285,15 @@ class LLM:
             source_model = self._continuation_source(ref)
         entry = self._tunable()
         technique = Technique(technique)
+        if technique is Technique.CPT and entry.family == "nova":
+            raise UnsupportedRouteError(
+                f"{entry.display_name} continued pre-training runs only as SageMaker HyperPod "
+                "recipes on 8-24 ml.p5.48xlarge instances, which Skyhammer doesn't manage. "
+                "Skyhammer CPT covers open-weight models",
+                alternatives=[
+                    e.alias for e in CATALOG.values() if e.capabilities_for(Technique.CPT)
+                ],
+            )
         if technique is Technique.DISTILLATION and not entry.capabilities_for(technique):
             raise SkyhammerError(
                 f"{entry.display_name} distills in two steps (teacher answers, then SFT), so "
@@ -366,10 +376,17 @@ class LLM:
             },
             {**settings.tags, **(tags or {})},
         )
-        price = pricing.training_price(self.session, route, technique, ttype)
-        if price.usd_per_hour is not None or technique is Technique.RFT:
+        if technique is Technique.CPT:  # a training job, billed per instance-hour
+            price = pricing.instance_price(
+                self.session, route.region, pretrain.instance_type(request)
+            )
+        else:
+            price = pricing.training_price(self.session, route, technique, ttype)
+        if price.usd_per_hour is not None or technique in (Technique.RFT, Technique.CPT):
             if route.backend is not BackendKind.SAGEMAKER and max_hours is not None:
-                raise UnsupportedParameterError("max_hours applies to SageMaker RL jobs only")
+                raise UnsupportedParameterError(
+                    "max_hours applies to time-billed SageMaker jobs (RL, CPT) only"
+                )
             if route.backend in (BackendKind.BEDROCK, BackendKind.MANTLE):
                 log.warning(
                     "Bedrock RFT is billed by training time%s and has no runtime cap; "

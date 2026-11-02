@@ -47,6 +47,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, progress and loss curves, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, DX-12, TR-19, TR-15, TR-16 |
 | [20_distillation.py](20_distillation.py) | Teacher → student distillation from prompts only | TR-6 |
 | [26_dpo.py](26_dpo.py) | Preference tuning (DPO) from preferred vs non-preferred answers | TR-8, DA-9 |
+| [36_continued_pretraining.py](36_continued_pretraining.py) | Continued pre-training on raw text (`create_cpt_job`): a runtime-capped SageMaker training job from open JumpStart weights → Bedrock import | TR-14 |
 | [28_rl_with_rewards.py](28_rl_with_rewards.py) | RL with a Python reward function or an LLM judge (auto-deployed Lambda), runtime-capped | TR-10, TR-11, TR-13, EV-4 |
 | [30_rft_on_bedrock.py](30_rft_on_bedrock.py) | RFT on Bedrock: Nova 2 Lite, and Qwen3-32B / GPT-OSS-20B through bedrock-mantle in us-west-2 from any region | TR-9, OP-8 |
 | [24_distill_open_weight.py](24_distill_open_weight.py) | Any Bedrock teacher → open-weight student (teacher answers, then SFT) | TR-7 |

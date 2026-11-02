@@ -75,6 +75,8 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
+# Runs inside the SageMaker training container (torch, transformers, peft).
+exclude = ["src/skyhammer/trainers/"]
 
 [[tool.mypy.overrides]]
 module = ["datasets", "datasets.*", "pandas", "pandas.*", "tokenizers", "huggingface_hub"]

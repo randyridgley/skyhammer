@@ -145,6 +145,10 @@ def _sm(
 
 
 _SM_ALL = [Technique.SFT, Technique.DPO, Technique.RFT]
+# Open dense text models also take continued pre-training (skyhammer.pretrain), which
+# trains from their JumpStart Hugging Face weights. Not GPT-OSS (MXFP4 weights) or Gemma
+# (a vision model).
+_SM_TEXT = [*_SM_ALL, Technique.CPT]
 
 CATALOG: dict[str, ModelEntry] = {
     e.alias: e
@@ -242,7 +246,7 @@ CATALOG: dict[str, ModelEntry] = {
                 # rejects it ("model identifier is invalid", live 2026-10-30).
                 capabilities=[
                     *([_mantle(Technique.RFT, "qwen.qwen3-32b", _W2)] if size == "32b" else []),
-                    *_sm(_SM_ALL, f"huggingface-reasoning-qwen3-{sm_size}"),
+                    *_sm(_SM_TEXT, f"huggingface-reasoning-qwen3-{sm_size}"),
                 ],
                 bedrock_serving_regions=_CMI,
             )
@@ -261,7 +265,7 @@ CATALOG: dict[str, ModelEntry] = {
             params_b=7,
             family="qwen",
             display_name="Qwen2.5 7B Instruct",
-            capabilities=_sm(_SM_ALL, "huggingface-llm-qwen2-5-7b-instruct"),
+            capabilities=_sm(_SM_TEXT, "huggingface-llm-qwen2-5-7b-instruct"),
             bedrock_serving_regions=_CMI,
         ),
         ModelEntry(
@@ -270,7 +274,7 @@ CATALOG: dict[str, ModelEntry] = {
             params_b=8,
             family="deepseek",
             display_name="DeepSeek R1 Distill Llama 8B",
-            capabilities=_sm(_SM_ALL, "deepseek-llm-r1-distill-llama-8b"),
+            capabilities=_sm(_SM_TEXT, "deepseek-llm-r1-distill-llama-8b"),
             bedrock_serving_regions=_CMI,
         ),
         ModelEntry(

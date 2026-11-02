@@ -93,7 +93,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-11 | RLAIF (LLM-judge reward) | 🟡 | M4 | `Grader.llm_judge(model, rubric)` as an RL reward on SageMaker, Bedrock RFT and bedrock-mantle: deployed as a reward Lambda that asks the judge model (Bedrock Converse) for a 1-5 score with the eval prompt, mapped to 0-1. Live 2026-10-30: SageMaker RL on Qwen3-0.6B called the judge ~6,500 times over 37 min, then failed: Nova Pro throttled 103 calls and the raised errors crashed the reward worker. The judge now retries adaptively and scores 0 instead of failing. 🔴 rerun pending |
 | TR-12 | Multi-turn / agentic RL | ⬜ | M6 | SageMaker MTRL (gpt-oss-20b, Qwen3.6) |
 | TR-13 | RL cost guardrail (max hours) | ✅ | M4 | RL jobs always get `max_hours` (default 4h) → `StoppingCondition`; estimate = live hourly price × cap ($80/h), enforced by `max_cost_usd`. Live: SageMaker serverless accepted the cap on the RLVR job (it finished in 5 min, so the cap didn't have to stop it) |
-| TR-14 | Continued pre-training | ⬜ | M5 | SageMaker training jobs / HyperPod recipes |
+| TR-14 | Continued pre-training | 🟡 | M5 | `create_cpt_job` on open dense models (Qwen3, Qwen2.5, DeepSeek R1 Distill): `{"text"}` documents packed into blocks, LoRA (merged) or full, as a SageMaker training job with the HF PyTorch DLC and Skyhammer's `cpt_train.py`, base weights from the open JumpStart artifacts, sized to one GPU instance and capped by `max_hours` (instance-hour Price List estimate); output imports into Bedrock. Checked live 2026-11-01: no Bedrock model offers CONTINUED_PRE_TRAINING any more, and Nova CPT is HyperPod-only (8-24 ml.p5.48xlarge), so Nova raises a clear error. 🔴 live run pending (Qwen3 0.6B, ~$1) |
 | TR-15 | Checkpoint listing, eval and resume | 🟡 | M4 | `job.checkpoints()`: step, metrics and location. SageMaker: `step_NNNN` FSDP training state in S3 with that step's metrics (live 2026-10-30). bedrock-mantle: callable checkpoint models (`checkpoint.llm()`), unit-tested. Bedrock customization keeps none. Not yet: resuming from a checkpoint, converting SageMaker checkpoints to servable weights |
 | TR-16 | Continued fine-tuning of a fine-tuned model | ✅ | M4 | `LLM.get(name).create_sft_job(...)` trains the fine-tune further on its own backend and region. SageMaker (`SourceModelPackageArn` from the earlier job's registered package): live 2026-10-30, Qwen3-0.6B LoRA v1 → v2 completed. Bedrock (custom model ARN as `baseModelIdentifier`): live 2026-10-30, Nova Micro SFT v1 → v2 completed (about 4 h for v2) |
 | TR-17 | BYO training code / custom loops | ⬜ | M6 | SageMaker training job with user container → import |
@@ -277,8 +277,9 @@ PK-5 nightly (needs the CI role).
 ### M5: enterprise and scale
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
 DX-8 async client, DX-14 framework adapters (2026-11-01); SV-10 provisioned throughput
-built (live purchase pending a model-unit quota). Remaining: TR-14 CPT, DA-11 synthetic
-data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10, PK-7 **PyPI 1.0**.
+built (live purchase pending a model-unit quota); TR-14 CPT built (live run pending).
+Remaining: DA-11 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account,
+EV-10, PK-7 **PyPI 1.0**.
 
 ### M6: frontier
 TR-12 agentic RL, TR-17 BYO training code, TR-20 vision, DA-10/12 multimodal and

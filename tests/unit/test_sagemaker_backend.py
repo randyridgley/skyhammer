@@ -179,7 +179,8 @@ def test_dataset_limits_come_from_hub_recipes(session: Session) -> None:
     assert sft.max_tokens_per_sample == 4096 and "SFT recipes" in sft.source
     rl = backend.dataset_limits(entry, Technique.RFT, TrainingType.LORA)
     assert rl.max_tokens_per_sample == 1024  # RLVR LoRA recipe is 1K in the real Hub data
-    assert backend.dataset_limits(entry, Technique.CPT, TrainingType.LORA) == entry.limits
+    cpt = backend.dataset_limits(entry, Technique.CPT, TrainingType.LORA)
+    assert cpt.max_tokens_per_sample > 1_000_000  # documents are packed into blocks
 
 
 def test_plan_rejects_samples_longer_than_recipe_before_spend(

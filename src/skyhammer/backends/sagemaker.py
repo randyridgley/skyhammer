@@ -34,6 +34,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from skyhammer import pretrain
 from skyhammer import tags as tagging
 from skyhammer.backends.base import DeploymentRef, DeployOptions
 from skyhammer.catalog import (
@@ -141,7 +142,7 @@ def _technique(
         return "RLVR", evaluator_arn
     if t is Technique.DISTILLATION:  # LLM.create_distillation_job runs teacher answers + SFT
         raise UnsupportedParameterError("use LLM.create_distillation_job for open-weight students")
-    raise NotImplementedError("Continued pre-training on SageMaker is planned for M4")
+    raise UnsupportedParameterError("CPT runs as a training job (skyhammer.pretrain), not a recipe")
 
 
 def recipe_hyperparameters(
@@ -235,6 +236,8 @@ class SageMakerServerlessBackend:
         self, entry: ModelEntry, technique: Technique, training_type: TrainingType
     ) -> DatasetLimits:
         """Max tokens per sample = the longest recipe AWS offers for this model/technique."""
+        if technique is Technique.CPT:
+            return pretrain.CPT_LIMITS
         hub_tech = {Technique.SFT: "SFT", Technique.DPO: "DPO", Technique.RFT: "RLVR"}.get(
             technique
         )
@@ -263,6 +266,8 @@ class SageMakerServerlessBackend:
         )
 
     def format_record(self, technique: Technique, record: dict[str, Any]) -> dict[str, Any]:
+        if technique is Technique.CPT:
+            return {"text": record["text"]}
         if technique is Technique.DPO:
             return to_sagemaker_dpo(record)
         if technique is Technique.RFT:
@@ -273,9 +278,13 @@ class SageMakerServerlessBackend:
 
     def check(
         self, request: TrainingRequest, evaluator_arn: str | None = "pending"
-    ) -> tuple[Recipe, dict[str, str]]:
+    ) -> tuple[Recipe | None, dict[str, str]]:
         """Everything that can fail before spending: EULA gating, recipe choice, and
-        hyperparameters/batch sizes against the live recipe. No bootstrap resources needed."""
+        hyperparameters/batch sizes against the live recipe. No bootstrap resources needed.
+        CPT has no recipe; it checks the base weights and the script's arguments."""
+        if request.technique is Technique.CPT:
+            hub_model = self.hub.model(request.route.capability.backend_model_id)
+            return None, pretrain.check(request, hub_model)
         technique, _ = _technique(request, evaluator_arn)
         hub_model = self.hub.model(request.route.capability.backend_model_id)
         if hub_model.gated and not request.accept_eula:
@@ -306,6 +315,7 @@ class SageMakerServerlessBackend:
         technique, evaluator_arn = _technique(request, evaluator_arn)
         model_id = request.route.capability.backend_model_id
         recipe, hyperparameters = self.check(request, evaluator_arn)
+        assert recipe is not None
 
         serverless: dict[str, Any] = {
             "BaseModelArn": SAGEMAKER_HUB_MODEL_ARN.format(region=self.region, model_id=model_id),
@@ -390,6 +400,19 @@ class SageMakerServerlessBackend:
             if request.validation_dataset
             else None
         )
+        if request.technique is Technique.CPT:
+            kwargs = pretrain.build_request(
+                self.session,
+                self.region,
+                request,
+                self.hub.model(request.route.capability.backend_model_id),
+                training_uri=training_uri,
+                validation_uri=validation_uri,
+                output_uri=f"{prefix}/output/",
+                script_uri=pretrain.upload_script(self.session, self.region),
+            )
+            resp = self.sagemaker.create_training_job(**kwargs)
+            return JobHandle(self.name, request.job_name, resp["TrainingJobArn"], self.region)
         needs_evaluator = bool(request.grader and request.technique is Technique.RFT)
         # Build (and so validate) the request before creating anything for it.
         kwargs = self.build_request(
