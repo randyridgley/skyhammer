@@ -5,7 +5,9 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import math
 import random
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +38,8 @@ class Dataset:
         self._rows = rows
         self._prepared: builtins.list[Record] | None = None
         self.report: ValidationReport | None = None
+        # Set by ``mix``: the parts (name, sha256, rows taken, share), kept in job records.
+        self.mixture: builtins.list[dict[str, Any]] | None = None
 
     # ---- constructors ----
 
@@ -81,27 +85,35 @@ class Dataset:
 
     @staticmethod
     def lineage(name: str, session: Any = None) -> dict[str, Any]:
-        """A dataset's uploaded versions and the jobs/models trained on it (newest first)."""
+        """A dataset's uploaded versions and the jobs/models trained on it (newest first),
+        including jobs trained on a ``mix`` that drew from it (``via`` names the mix)."""
         from skyhammer import registry
         from skyhammer.session import get_session
 
         session = session or get_session()
         versions = [d for d in Dataset.list(session) if d["name"] == name]
-        jobs = [
-            {
-                "job": r.job_name,
-                "model": r.output_model,
-                "base_model": r.base_model,
-                "technique": r.technique,
-                "dataset_sha256": r.dataset.get("sha256"),
-                "rows": r.dataset.get("rows"),
-                "distilled_from": r.tags.get("skyhammer:distilled-from")
-                or r.tags.get("distilled-from"),
-                "created_at": r.created_at,
-            }
-            for r in registry.list_jobs(session, include_deleted=True)
-            if r.dataset.get("name") == name
-        ]
+        jobs = []
+        for r in registry.list_jobs(session, include_deleted=True):
+            direct = r.dataset.get("name") == name
+            part: dict[str, Any] = next(
+                (p for p in r.dataset.get("mixture") or [] if p["name"] == name), {}
+            )
+            if not direct and not part:
+                continue
+            jobs.append(
+                {
+                    "job": r.job_name,
+                    "model": r.output_model,
+                    "base_model": r.base_model,
+                    "technique": r.technique,
+                    "dataset_sha256": r.dataset.get("sha256") if direct else part["sha256"],
+                    "rows": r.dataset.get("rows") if direct else part["rows"],
+                    "via": None if direct else r.dataset.get("name"),
+                    "distilled_from": r.tags.get("skyhammer:distilled-from")
+                    or r.tags.get("distilled-from"),
+                    "created_at": r.created_at,
+                }
+            )
         if not versions and not jobs:
             raise SkyhammerError(f"No dataset named {name!r}. Run `skyhammer datasets list`.")
         jobs.sort(key=lambda j: float(j["created_at"] or 0), reverse=True)
@@ -184,6 +196,68 @@ class Dataset:
             generator, n=n, task=task, documents=documents, examples=examples, name=name, **kwargs
         )
 
+    @classmethod
+    def mix(
+        cls,
+        parts: Mapping[Dataset, float] | Iterable[tuple[Dataset, float]],
+        *,
+        n: int | None = None,
+        name: str | None = None,
+        seed: int = 0,
+        repeat: bool = False,
+    ) -> Dataset:
+        """One dataset drawn from several by weight, for example 70% your domain data and
+        30% general chat so the model keeps its general skills while specializing.
+
+        Weights are relative (``{support: 7, chat: 3}`` equals ``{support: 0.7, chat: 0.3}``).
+        ``n`` defaults to the largest mix that uses each row at most once; a larger ``n``
+        needs ``repeat=True`` (rows of a small part are then used more than once). Rows are
+        drawn and shuffled with ``seed``, so the same inputs give the same dataset (and
+        version). The parts are recorded in ``mixture`` and in the records of jobs trained
+        on it, so ``Dataset.lineage()`` of a part lists them too."""
+        pairs = builtins.list(parts.items() if isinstance(parts, Mapping) else parts)
+        if not pairs:
+            raise SkyhammerError("Dataset.mix needs at least one (dataset, weight)")
+        for ds, w in pairs:
+            if w < 0 or not math.isfinite(w):
+                raise SkyhammerError(f"Weight for {ds.name!r} must be a non-negative number")
+            if w > 0 and len(ds) == 0:
+                raise SkyhammerError(f"{ds.name!r} has no rows")
+        total = sum(w for _, w in pairs)
+        if total <= 0:
+            raise SkyhammerError("At least one weight must be positive")
+        shares = [(ds, w / total) for ds, w in pairs if w > 0]
+        if n is None:
+            # Largest mix without repeats: the part that runs out first bounds it.
+            n = min(math.floor(len(ds) / share + 1e-9) for ds, share in shares)
+        if n < 1:
+            raise SkyhammerError("n must be at least 1")
+        counts = _allocate(n, [share for _, share in shares])
+        rng = random.Random(seed)
+        rows: builtins.list[Any] = []
+        mixture = []
+        for (ds, share), count in zip(shares, counts, strict=True):
+            if count > len(ds) and not repeat:
+                raise SkyhammerError(
+                    f"A {n}-row mix needs {count} rows from {ds.name!r}, which has "
+                    f"{len(ds)}. Lower n, or pass repeat=True to use its rows more than once."
+                )
+            source = [r for _, r in ds._rows]
+            taken: builtins.list[Any] = []
+            while len(taken) < count:  # whole shuffled passes, then a partial one
+                rng.shuffle(source)
+                taken += source[: count - len(taken)]
+            rows += taken
+            mixture.append(
+                {"name": ds.name, "sha256": ds.sha256, "rows": count, "share": round(share, 6)}
+            )
+        rng.shuffle(rows)
+        mixed = cls(
+            name or "+".join(ds.name for ds, _ in shares), builtins.list(enumerate(rows, 1))
+        )
+        mixed.mixture = mixture
+        return mixed
+
     # ---- identity ----
 
     @property
@@ -253,10 +327,9 @@ class Dataset:
         rows = list(self._rows)
         random.Random(seed).shuffle(rows)
         n_val = max(1, int(len(rows) * validation_fraction))
-        return (
-            Dataset(f"{self.name}-train", rows[n_val:], self.source),
-            Dataset(f"{self.name}-val", rows[:n_val], self.source),
-        )
+        train = Dataset(f"{self.name}-train", rows[n_val:], self.source)
+        train.mixture = self.mixture  # the parts it was drawn from, for lineage
+        return train, Dataset(f"{self.name}-val", rows[:n_val], self.source)
 
     # ---- upload ----
 
@@ -292,3 +365,14 @@ class Dataset:
         )
         s3.put_object(Bucket=res.bucket, Key=key, Body=body, **extra)
         return uri
+
+
+def _allocate(n: int, shares: builtins.list[float]) -> builtins.list[int]:
+    """Split ``n`` rows by ``shares`` (summing to 1), rounding by largest remainder so the
+    counts add up to ``n`` exactly."""
+    exact = [n * s for s in shares]
+    counts = [math.floor(x) for x in exact]
+    by_remainder = sorted(range(len(shares)), key=lambda i: exact[i] - counts[i], reverse=True)
+    for i in by_remainder[: n - sum(counts)]:
+        counts[i] += 1
+    return counts

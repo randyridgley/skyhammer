@@ -74,7 +74,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DA-9 | Preference (DPO) and prompt-only (RFT) formats | ✅ | M4 | Validators plus per-backend formats, all accepted live: SageMaker DPO (TR-8, 2026-10-29), SageMaker RLVR prompts (TR-10), bedrock-mantle RFT rows passed the service's data validation (OP-8 runs, 2026-10-30) |
 | DA-10 | Multimodal (image/video) datasets | ⬜ | M6 | Nova + Qwen-VL; media upload + reference rewriting |
 | DA-11 | Synthetic data generation | 🟡 | M5 | `Dataset.synthesize(model, n=..., documents=... / task=..., examples=...)`: a Bedrock model writes SFT conversations with structured output, contextual (each call grounded in a document chunk, spread across the documents) or non-contextual (task + seed style); questions de-duplicated, cached in S3, cost bound checked against `max_cost_usd` before any call. SageMaker's serverless DataGeneration has Price List rows (`ServerlessTraining:DataGeneration-[Non]Contextual-*`) but no public API in botocore 1.43.123 (2026-11-01), so Skyhammer generates client-side. 🔴 live run pending (~$0.05) |
-| DA-12 | Data mixing | ⬜ | M6 | Recipes support `data_mixing_config` |
+| DA-12 | Data mixing | 🟡 | M6 | `Dataset.mix({domain: 0.7, general: 0.3}, n=, seed=, repeat=)`: weighted, reproducible mixes of your datasets for any backend (largest repeat-free size by default; `repeat=True` upsamples), parts recorded in job records so `Dataset.lineage()` follows mixes. Mixing in Amazon Nova's curated data (`customer_data_percent` + 23 `nova_*_percent` categories) is Nova Forge only: Nova 2 Lite SFT on SageMaker serverless jobs, `IsSubscriptionModel` recipes in the Public Hub (checked 2026-11-02). Needs a Forge subscription and a Nova SageMaker route; not built |
 
 ### 2.3 Training
 
@@ -282,8 +282,9 @@ built (live runs pending). EV-10 W&B / Langfuse and SE-6 cross-account built (li
 pending). Remaining: OP-4 cost reporting (confirm), PK-7 **PyPI 1.0**.
 
 ### M6: frontier
-TR-17 BYO training code built (live run pending). Remaining: TR-12 agentic RL, TR-20
-vision, DA-10/12 multimodal and mixing, SV-14 quantization/speculative decoding.
+TR-17 BYO training code built (live run pending). DA-12 dataset mixing built (Nova Forge
+mixing needs a subscription). Remaining: TR-12 agentic RL, TR-20 vision, DA-10
+multimodal data, SV-14 quantization/speculative decoding.
 
 ## 4. Known risks and open questions
 

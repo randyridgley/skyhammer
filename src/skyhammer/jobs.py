@@ -173,6 +173,7 @@ class JobRecord:
                 "name": request.dataset.name,
                 "sha256": request.dataset.sha256,
                 "rows": request.dataset.num_records,
+                **({"mixture": mixture} if (mixture := request.dataset.mixture) else {}),
             },
             estimate=estimate,
             created_at=time.time(),

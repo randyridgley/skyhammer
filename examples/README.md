@@ -50,6 +50,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [26_dpo.py](26_dpo.py) | Preference tuning (DPO) from preferred vs non-preferred answers | TR-8, DA-9 |
 | [36_continued_pretraining.py](36_continued_pretraining.py) | Continued pre-training on raw text (`create_cpt_job`): a runtime-capped SageMaker training job from open JumpStart weights → Bedrock import | TR-14 |
 | [40_custom_training.py](40_custom_training.py) | Your own training loop (`create_custom_job`: a script directory or a container) on a runtime-capped SageMaker GPU job → Bedrock import; [custom_trainer/train.py](custom_trainer/train.py) is the loop | TR-17 |
+| [41_data_mixing.py](41_data_mixing.py) | Blend datasets by weight (`Dataset.mix`): domain data plus general chat so the model keeps its general skills; reproducible, and lineage follows the parts | DA-12 |
 | [28_rl_with_rewards.py](28_rl_with_rewards.py) | RL with a Python reward function or an LLM judge (auto-deployed Lambda), runtime-capped | TR-10, TR-11, TR-13, EV-4 |
 | [30_rft_on_bedrock.py](30_rft_on_bedrock.py) | RFT on Bedrock: Nova 2 Lite, and Qwen3-32B / GPT-OSS-20B through bedrock-mantle in us-west-2 from any region | TR-9, OP-8 |
 | [24_distill_open_weight.py](24_distill_open_weight.py) | Any Bedrock teacher → open-weight student (teacher answers, then SFT) | TR-7 |
