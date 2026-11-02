@@ -1,5 +1,6 @@
 """skyhammer: fine-tune Amazon Nova and open-weight models on AWS, served by Bedrock."""
 
+from skyhammer.accounts import promote
 from skyhammer.aio import AsyncLLM
 from skyhammer.auth import generate_api_key, openai_client
 from skyhammer.batch import BatchJob
@@ -21,6 +22,7 @@ from skyhammer.evaluation import EvalJob
 from skyhammer.graders import Grader, grader, reference_answer
 from skyhammer.jobs import FineTuningJob, JobState
 from skyhammer.llm import LLM
+from skyhammer.session import Session
 from skyhammer.traffic import TrafficSplit
 
 __version__ = "0.1.0"
@@ -39,6 +41,7 @@ __all__ = [
     "Grader",
     "JobFailedError",
     "JobState",
+    "Session",
     "SkyhammerError",
     "SpendLimitExceededError",
     "Technique",
@@ -51,5 +54,6 @@ __all__ = [
     "generate_api_key",
     "grader",
     "openai_client",
+    "promote",
     "reference_answer",
 ]

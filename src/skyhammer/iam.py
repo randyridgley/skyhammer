@@ -283,3 +283,56 @@ def user_policy(
             }
         )
     return {"Version": "2012-10-17", "Statement": statements}
+
+
+def cross_account_policy(account_id: str, *, partition: str = "aws") -> dict[str, Any]:
+    """The extra permissions for promoting models between accounts (SE-6), kept apart from
+    ``user_policy`` (managed policies are capped at 6,144 characters). Attach it in both
+    the source and the target account: sharing through AWS RAM on one side, accepting and
+    copying (or importing) on the other, and the source account's KMS key for the copy."""
+    arn = f"arn:{partition}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "ShareModels",
+                "Effect": "Allow",
+                "Action": [
+                    "ram:CreateResourceShare",
+                    "ram:AssociateResourceShare",
+                    "ram:GetResourceShares",
+                    "ram:GetResourceShareInvitations",
+                    "ram:AcceptResourceShareInvitation",
+                    "bedrock:PutResourcePolicy",
+                    "bedrock:GetResourcePolicy",
+                ],
+                "Resource": "*",
+            },
+            {
+                "Sid": "CopySharedModels",
+                "Effect": "Allow",
+                "Action": [
+                    "bedrock:CreateModelCopyJob",
+                    "bedrock:GetModelCopyJob",
+                    "bedrock:GetCustomModel",
+                ],
+                "Resource": [
+                    f"{arn}:bedrock:*:*:custom-model/*",
+                    f"{arn}:bedrock:*:{account_id}:model-copy-job/*",
+                ],
+            },
+            {
+                "Sid": "SourceModelKeys",  # the source account's key (its key policy decides)
+                "Effect": "Allow",
+                "Action": ["kms:Decrypt", "kms:DescribeKey", "kms:CreateGrant"],
+                "Resource": f"{arn}:kms:*:*:key/*",
+                "Condition": {"StringLike": {"kms:ViaService": "bedrock.*.amazonaws.com"}},
+            },
+            {
+                "Sid": "AssumeStageRoles",  # settings `accounts`: name the roles *skyhammer*
+                "Effect": "Allow",
+                "Action": "sts:AssumeRole",
+                "Resource": f"{arn}:iam::*:role/*skyhammer*",
+            },
+        ],
+    }

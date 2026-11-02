@@ -57,6 +57,15 @@ def _vpc_parameters(session: Session) -> list[dict[str, str]]:
     ]
 
 
+def _account_parameters(session: Session) -> list[dict[str, str]]:
+    """Cross-account grants (SE-6): who may read this account's models, whose it may read."""
+    s = session.settings
+    return [
+        {"ParameterKey": "ShareWithAccounts", "ParameterValue": ",".join(s.share_with)},
+        {"ParameterKey": "TrustedSourceAccounts", "ParameterValue": ",".join(s.trust_accounts)},
+    ]
+
+
 def deploy(
     session: Session, *, kms_key_arn: str | None = None, wait: bool = True
 ) -> dict[str, str]:
@@ -69,6 +78,7 @@ def deploy(
         "Parameters": [
             {"ParameterKey": "ExistingKmsKeyArn", "ParameterValue": kms_key_arn or ""},
             *_vpc_parameters(session),
+            *_account_parameters(session),
         ],
         "Capabilities": ["CAPABILITY_IAM"],
         "Tags": tagging.as_aws(

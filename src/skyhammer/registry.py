@@ -1,7 +1,8 @@
 """Manifest store: the SDK's only state, as JSON in the home-region bootstrap bucket.
 
     manifests/jobs/<job_name>.json      JobRecord (one per training job)
-    manifests/models/<model_name>.json  {latest_job, jobs[], deployment, deleted, eval}
+    manifests/models/<model_name>.json  {latest_job, jobs[], deployment, deleted, eval,
+                                         model_ref (promoted models, no job here)}
     manifests/envs/<app>.json           environments: {envs: {prod: {targets, history}}}
 
 Model manifests map the user's name ("support-qwen-v1") to its latest job, so jobs can be
@@ -11,12 +12,13 @@ chat without redeploying. Last writer wins; there is no locking.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from typing import TYPE_CHECKING, Any
 
 from skyhammer import tags as tagging
 from skyhammer.errors import SkyhammerError
-from skyhammer.jobs import JobRecord
+from skyhammer.jobs import JobRecord, ModelRef
 
 if TYPE_CHECKING:
     from skyhammer.session import Session
@@ -44,6 +46,20 @@ def save_job(session: Session, record: JobRecord) -> None:
         model["jobs"].append(record.job_name)
     model.update(latest_job=record.job_name, deleted=False, updated_at=time.time())
     tagging.write_manifest(s3, res.bucket, _MODELS, record.output_model, model, res.kms_key_arn)
+
+
+def save_model_ref(session: Session, ref: ModelRef, **extra: Any) -> None:
+    """Record a model that has no training job in this account (promoted from another
+    account), so ``LLM.get(name)`` finds it."""
+    res = session.resources
+    s3 = _s3(session)
+    model = tagging.read_manifest(s3, res.bucket, _MODELS, ref.name) or {
+        "name": ref.name,
+        "base_model": ref.base_alias,
+        "jobs": [],
+    }
+    model.update(model_ref=dataclasses.asdict(ref), deleted=False, updated_at=time.time(), **extra)
+    tagging.write_manifest(s3, res.bucket, _MODELS, ref.name, model, res.kms_key_arn)
 
 
 def load_job(session: Session, job_name: str) -> JobRecord | None:

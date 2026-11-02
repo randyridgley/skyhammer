@@ -66,6 +66,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [22_bring_your_own_weights.py](22_bring_your_own_weights.py) | Import your own HF weights into Bedrock | TR-18 |
 | [23_manage_deployments.py](23_manage_deployments.py) | List and prune idle deployments | SV-7 |
 | [27_serving_metrics.py](27_serving_metrics.py) | Traffic, latency p50/p99, tokens and errors from CloudWatch | OP-5 |
+| [39_cross_account.py](39_cross_account.py) | Assume-role sessions per account (`Session.for_account`), promote a fine-tune from the training account to prod (RAM share + copy, or re-import), bootstrap grants | SE-6 |
 | [31_environments_and_ab_tests.py](31_environments_and_ab_tests.py) | Environments (`support@prod`): promote, canary splits, rollback; A/B tests with sticky users and per-model stats | SV-12, SV-11 |
 
 ## CLI (DX-4)

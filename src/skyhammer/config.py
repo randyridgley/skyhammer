@@ -35,9 +35,28 @@ class Vpc(BaseModel):
     security_group_ids: list[str] = Field(min_length=1)
 
 
+class Account(BaseModel):
+    """Another AWS account Skyhammer works in (a stage such as data, training or prod),
+    reached by assuming ``role_arn`` from the base credentials."""
+
+    role_arn: str
+    region: str | None = None  # default: the home region
+    external_id: str | None = None
+
+
 class Settings(BaseModel):
     profile: str | None = None
     region: str = "us-east-1"
+    # Assume this role (from the profile's credentials) for everything; refreshed as needed.
+    role_arn: str | None = None
+    external_id: str | None = None
+    # Named accounts for cross-account work, e.g. Session.for_account("prod") or
+    # promote(model, to="prod"):  accounts: {prod: {role_arn: arn:aws:iam::222:role/x}}
+    accounts: dict[str, Account] = Field(default_factory=dict)
+    # Bootstrap grants: accounts that may import or copy this account's models (bucket and
+    # key policy), and accounts whose models this account's import role may read.
+    share_with: list[str] = Field(default_factory=list)
+    trust_accounts: list[str] = Field(default_factory=list)
     bucket: str | None = None
     kms_key_arn: str | None = None
     bedrock_role_arn: str | None = None
@@ -71,7 +90,7 @@ class Settings(BaseModel):
         return self.vpc.get(region)
 
 
-_ENV_KEYS = ("profile", "region", "bucket", "kms_key_arn", "bootstrap_stack")
+_ENV_KEYS = ("profile", "region", "bucket", "kms_key_arn", "bootstrap_stack", "role_arn")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

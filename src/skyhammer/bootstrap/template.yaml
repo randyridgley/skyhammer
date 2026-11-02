@@ -14,10 +14,20 @@ Parameters:
     Type: CommaDelimitedList
     Default: ""
     Description: Security group ARNs for VPC-only jobs.
+  ShareWithAccounts:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Accounts that may copy or import this account's models (settings `share_with`).
+  TrustedSourceAccounts:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Accounts whose model weights this account may import (settings `trust_accounts`).
 
 Conditions:
   CreateKey: !Equals [!Ref ExistingKmsKeyArn, ""]
   UseVpc: !Not [!Equals [!Join ["", !Ref VpcSubnetArns], ""]]
+  ShareModels: !Not [!Equals [!Join ["", !Ref ShareWithAccounts], ""]]
+  TrustSources: !Not [!Equals [!Join ["", !Ref TrustedSourceAccounts], ""]]
 
 Resources:
   Key:
@@ -54,6 +64,15 @@ Resources:
             Condition:
               ArnLike:
                 aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*"
+          # Promotion (SE-6): another account copies or imports models encrypted with this key.
+          - !If
+            - ShareModels
+            - Sid: ShareModelsWithAccounts
+              Effect: Allow
+              Principal: {AWS: !Ref ShareWithAccounts}
+              Action: [kms:Decrypt, kms:DescribeKey, kms:CreateGrant]
+              Resource: "*"
+            - !Ref AWS::NoValue
 
   KeyAlias:
     Type: AWS::KMS::Alias
@@ -94,6 +113,24 @@ Resources:
             Action: "s3:*"
             Resource: [!GetAtt Bucket.Arn, !Sub "${Bucket.Arn}/*"]
             Condition: {Bool: {aws:SecureTransport: "false"}}
+          # Promotion (SE-6): trained weights are readable by the accounts models are shared with.
+          - !If
+            - ShareModels
+            - Sid: ShareModelWeights
+              Effect: Allow
+              Principal: {AWS: !Ref ShareWithAccounts}
+              Action: s3:GetObject
+              Resource: [!Sub "${Bucket.Arn}/jobs/*", !Sub "${Bucket.Arn}/models/*"]
+            - !Ref AWS::NoValue
+          - !If
+            - ShareModels
+            - Sid: ListModelWeights
+              Effect: Allow
+              Principal: {AWS: !Ref ShareWithAccounts}
+              Action: s3:ListBucket
+              Resource: !GetAtt Bucket.Arn
+              Condition: {StringLike: {s3:prefix: ["jobs/*", "models/*"]}}
+            - !Ref AWS::NoValue
 
   DataAccessPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -112,6 +149,21 @@ Resources:
           - Effect: Allow
             Action: [kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey, kms:CreateGrant]
             Resource: !If [CreateKey, !GetAtt Key.Arn, !Ref ExistingKmsKeyArn]
+          # Promotion (SE-6): read the skyhammer buckets (and keys) of trusted source accounts.
+          - !If
+            - TrustSources
+            - Effect: Allow
+              Action: [s3:GetObject, s3:ListBucket, s3:GetBucketLocation]
+              Resource: [!Sub "arn:${AWS::Partition}:s3:::skyhammer-*"]
+              Condition: {StringEquals: {aws:ResourceAccount: !Ref TrustedSourceAccounts}}
+            - !Ref AWS::NoValue
+          - !If
+            - TrustSources
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:DescribeKey, kms:CreateGrant]
+              Resource: "*"
+              Condition: {StringEquals: {aws:ResourceAccount: !Ref TrustedSourceAccounts}}
+            - !Ref AWS::NoValue
 
   # VPC-only jobs: only created when bootstrap is given subnets, and limited to them.
   VpcAccessPolicy:

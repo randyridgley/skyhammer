@@ -147,7 +147,10 @@ class LLM:
         manifest = registry.load_model(session, name)
         if manifest and manifest.get("deleted"):
             raise SkyhammerError(f"Model {name!r} was deleted")
-        llm = FineTuningJob.get(name, session=session).output_llm
+        if manifest and manifest.get("model_ref") and not manifest.get("latest_job"):
+            llm = cls.from_model_ref(ModelRef(**manifest["model_ref"]), session=session)
+        else:
+            llm = FineTuningJob.get(name, session=session).output_llm
         dep = (manifest or {}).get("deployment")
         if dep and llm.model_ref:
             backend = get_backend(
@@ -639,6 +642,13 @@ class LLM:
             ),
             session=session,
         )
+
+    def promote(self, *, to: Session | str, name: str | None = None, wait: bool = True) -> LLM:
+        """This fine-tuned model, made available in another account (``to``: a session or
+        an account name from settings ``accounts``). See ``skyhammer.accounts``."""
+        from skyhammer.accounts import promote
+
+        return promote(self, to=to, name=name, session=self.session, wait=wait)
 
     def serverless_available(self) -> bool:
         try:

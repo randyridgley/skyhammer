@@ -217,7 +217,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SE-3 | Data residency / region pinning | ✅ | M0 | `allowed_regions`, `cross_region: false` |
 | SE-4 | Least-privilege IAM | ✅ | M4 | Bootstrap roles scoped: Bedrock invoke to base models, this account's profiles and fine-tunes; batch jobs and model packages to their own ARNs (Hub content reads stay on `*`: SageMaker training was denied with a scoped ARN, live 2026-10-30); VPC permissions only when a VPC is configured, limited to its subnets; SageMaker trust checks the source account. `skyhammer auth policy` prints a user/CI policy (5.6 KB). Live 2026-10-30: applied in both regions; IAM simulator checks of the deployed roles (12/12) and the user policy (29/29, including denials) |
 | SE-5 | VPC-only training & import (no egress) | 🟡 | M4 | Settings `vpc: {region: {subnet_ids, security_group_ids}}` applies to SageMaker training jobs and endpoint models, Bedrock customization and import jobs (schema-validated); bootstrap job roles can manage the network interfaces (applied in both regions 2026-10-30). Subnets need an S3 gateway endpoint. 🔴 live run in a private VPC pending |
-| SE-6 | Cross-account (data/training/serving accounts) | ⬜ | M5 | Assume-role per stage; bucket policies |
+| SE-6 | Cross-account (data/training/serving accounts) | 🟡 | M5 | Settings `role_arn` / named `accounts` → `Session.for_account("prod")` (assumed, auto-refreshed credentials). `promote(model, to="prod")` / `LLM.promote` / `skyhammer models promote`: Bedrock custom models are shared through AWS RAM and copied (`CreateModelCopyJob`; same Organization), open-weight models re-imported from the source bucket; the target registry records them so `LLM.get` works there. Grants are bootstrap parameters (`share_with`: bucket + key policy; `trust_accounts`: import role), checked before promoting; `skyhammer auth policy --cross-account`. 🔴 live run pending (needs a second account; RAM copy also needs an Organization) |
 | SE-7 | SSO / RBAC | ➖ | — | Provided by AWS IAM Identity Center; document patterns |
 | SE-8 | License gating (EULA) | ✅ | M1 | From Hub `ModelAccess`; `accept_eula=True` |
 
@@ -278,8 +278,8 @@ PK-5 nightly (needs the CI role).
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
 DX-8 async client, DX-14 framework adapters (2026-11-01); SV-10 provisioned throughput
 built (live purchase pending a model-unit quota); TR-14 CPT and DA-11 synthetic data
-built (live runs pending). EV-10 W&B / Langfuse built (live run pending). Remaining:
-OP-4/6 cost reporting and alerts, SE-6 cross-account, PK-7 **PyPI 1.0**.
+built (live runs pending). EV-10 W&B / Langfuse and SE-6 cross-account built (live runs
+pending). Remaining: OP-4 cost reporting (confirm), PK-7 **PyPI 1.0**.
 
 ### M6: frontier
 TR-12 agentic RL, TR-17 BYO training code, TR-20 vision, DA-10/12 multimodal and

@@ -494,6 +494,23 @@ def models_delete(name: str, yes: Annotated[bool, typer.Option("--yes", "-y")] =
     console.print(f"Deleted {name}.")
 
 
+@models_app.command("promote")
+def models_promote(
+    name: str,
+    to: Annotated[str, typer.Option(help="Target account, by name from settings `accounts`")],
+    as_name: Annotated[str | None, typer.Option("--as", help="Name in the target")] = None,
+) -> None:
+    """Make a fine-tuned model available in another account (RAM share + copy for Bedrock
+    models, re-import from S3 for open-weight ones)."""
+    from skyhammer.accounts import promote
+
+    llm = promote(name, to=to, name=as_name)
+    ref = llm.model_ref
+    console.print(
+        f"Promoted {name} to {to} as {ref.name if ref else as_name}: {ref.model_arn if ref else ''}"
+    )
+
+
 @app.command()
 def deploy(
     name: str,
@@ -674,14 +691,22 @@ def auth_policy(
     bootstrap: Annotated[
         bool, typer.Option(help="Include managing the skyhammer-bootstrap stack")
     ] = True,
+    cross_account: Annotated[
+        bool, typer.Option(help="Print the extra policy for promoting models between accounts")
+    ] = False,
 ) -> None:
     """Print a least-privilege IAM policy for Skyhammer users (attach to a role or group)."""
     import json
 
-    from skyhammer.iam import user_policy
+    from skyhammer.iam import cross_account_policy, user_policy
 
-    account = account or Session().client("sts").get_caller_identity()["Account"]
-    typer.echo(json.dumps(user_policy(account, bootstrap=bootstrap), indent=2))
+    account = account or Session().account_id
+    policy = (
+        cross_account_policy(account)
+        if cross_account
+        else user_policy(account, bootstrap=bootstrap)
+    )
+    typer.echo(json.dumps(policy, indent=2))
 
 
 @auth_app.command("api-key")
