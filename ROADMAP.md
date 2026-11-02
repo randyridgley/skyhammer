@@ -73,7 +73,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DA-8 | Dataset versioning & lineage | ✅ | M3 | Content-addressed versions; `Dataset.lineage()` / `skyhammer datasets get` link versions to every model trained on them (and distillation teachers). Verified live 2026-10-29 |
 | DA-9 | Preference (DPO) and prompt-only (RFT) formats | ✅ | M4 | Validators plus per-backend formats, all accepted live: SageMaker DPO (TR-8, 2026-10-29), SageMaker RLVR prompts (TR-10), bedrock-mantle RFT rows passed the service's data validation (OP-8 runs, 2026-10-30) |
 | DA-10 | Multimodal (image/video) datasets | ⬜ | M6 | Nova + Qwen-VL; media upload + reference rewriting |
-| DA-11 | Synthetic data generation | ⬜ | M5 | SageMaker serverless DataGeneration (priced per 1M tokens) |
+| DA-11 | Synthetic data generation | 🟡 | M5 | `Dataset.synthesize(model, n=..., documents=... / task=..., examples=...)`: a Bedrock model writes SFT conversations with structured output, contextual (each call grounded in a document chunk, spread across the documents) or non-contextual (task + seed style); questions de-duplicated, cached in S3, cost bound checked against `max_cost_usd` before any call. SageMaker's serverless DataGeneration has Price List rows (`ServerlessTraining:DataGeneration-[Non]Contextual-*`) but no public API in botocore 1.43.123 (2026-11-01), so Skyhammer generates client-side. 🔴 live run pending (~$0.05) |
 | DA-12 | Data mixing | ⬜ | M6 | Recipes support `data_mixing_config` |
 
 ### 2.3 Training
@@ -277,8 +277,8 @@ PK-5 nightly (needs the CI role).
 ### M5: enterprise and scale
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
 DX-8 async client, DX-14 framework adapters (2026-11-01); SV-10 provisioned throughput
-built (live purchase pending a model-unit quota); TR-14 CPT built (live run pending).
-Remaining: DA-11 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account,
+built (live purchase pending a model-unit quota); TR-14 CPT and DA-11 synthetic data
+built (live runs pending). Remaining: OP-4/6 cost reporting and alerts, SE-6 cross-account,
 EV-10, PK-7 **PyPI 1.0**.
 
 ### M6: frontier

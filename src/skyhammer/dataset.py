@@ -15,6 +15,8 @@ from skyhammer.validation import ValidationReport, apply_fixes, parse_jsonl, val
 
 if TYPE_CHECKING:
     from skyhammer.backends.base import Backend
+    from skyhammer.llm import LLM
+    from skyhammer.session import Session
 
 Record = dict[str, Any]
 
@@ -156,6 +158,32 @@ class Dataset:
     def from_records(cls, records: builtins.list[Record], name: str) -> Dataset:
         return cls(name, list(enumerate(records, start=1)))
 
+    @classmethod
+    def synthesize(
+        cls,
+        model: str | LLM,
+        *,
+        n: int,
+        task: str | None = None,
+        documents: Dataset | builtins.list[str] | str | None = None,
+        examples: Dataset | None = None,
+        name: str = "synthetic",
+        session: Session | None = None,
+        **kwargs: Any,
+    ) -> Dataset:
+        """About ``n`` SFT conversations written by a Bedrock ``model``: questions grounded
+        in ``documents`` (contextual), or following a ``task`` description and the style of
+        a few seed ``examples``. Cached in S3; ``max_cost_usd`` bounds the spend up front.
+        Other options (``system``, ``per_call``, ``max_tokens``, ``temperature``) are in
+        ``skyhammer.synthetic.synthesize``."""
+        from skyhammer.llm import LLM
+        from skyhammer.synthetic import synthesize
+
+        generator = LLM(model, session=session) if isinstance(model, str) else model
+        return synthesize(
+            generator, n=n, task=task, documents=documents, examples=examples, name=name, **kwargs
+        )
+
     # ---- identity ----
 
     @property
@@ -168,6 +196,10 @@ class Dataset:
 
     def __len__(self) -> int:
         return len(self._rows)
+
+    def records(self) -> builtins.list[Record]:
+        """The rows as plain dicts (copies; editing them doesn't change the dataset)."""
+        return [json.loads(json.dumps(r)) for _, r in self._rows]
 
     @property
     def num_records(self) -> int:

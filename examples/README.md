@@ -45,6 +45,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [16_fine_tune_nova.py](16_fine_tune_nova.py) | Nova SFT on Bedrock → serverless deploy → chat → delete | TR-1, SV-2, DX-2 |
 | [17_fine_tune_open_weight.py](17_fine_tune_open_weight.py) | Open-weight SFT on SageMaker → auto-import to Bedrock; hyperparameter checks; cold starts | TR-2, TR-3, TR-4, SV-3, SE-8 |
 | [18_reattach_jobs.py](18_reattach_jobs.py) | Reattach by name, progress and loss curves, job logs and checkpoints, chat with a recorded deployment, continue training a fine-tuned model | DX-3, DX-12, TR-19, TR-15, TR-16 |
+| [37_synthetic_data.py](37_synthetic_data.py) | Synthetic SFT data from a Bedrock model (`Dataset.synthesize`): grounded in your documents, or from a task description and seed examples; cost-bounded and cached | DA-11 |
 | [20_distillation.py](20_distillation.py) | Teacher → student distillation from prompts only | TR-6 |
 | [26_dpo.py](26_dpo.py) | Preference tuning (DPO) from preferred vs non-preferred answers | TR-8, DA-9 |
 | [36_continued_pretraining.py](36_continued_pretraining.py) | Continued pre-training on raw text (`create_cpt_job`): a runtime-capped SageMaker training job from open JumpStart weights → Bedrock import | TR-14 |
