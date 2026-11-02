@@ -23,6 +23,8 @@ pandas = ["pandas>=2.0"]
 langchain = ["langchain-core>=1.0"]
 llama-index = ["llama-index-core>=0.14"]
 litellm = ["litellm[mcp]>=1.80"]  # mcp: LiteLLM imports it for any call with tools
+wandb = ["wandb>=0.21"]
+langfuse = ["langfuse>=5.0"]
 
 [project.urls]
 Homepage = "https://github.com/randyridgley/skyhammer"
@@ -48,6 +50,8 @@ dev = [
     "langchain-core>=1.7.3",
     "llama-index-core>=0.14.25",
     "litellm[mcp]>=1.80",
+    "wandb>=0.21",
+    "langfuse>=5.0",
 ]
 
 [build-system]

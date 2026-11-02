@@ -114,7 +114,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | EV-7 | Base vs fine-tuned comparison report | ✅ | M3 | `skyhammer eval compare MODEL... --dataset --grader` (base vs tuned or any models, with cost); live 2026-10-29 on 3 providers |
 | EV-8 | Eval in specs (`skyhammer apply`) | ✅ | M1.5 | |
 | EV-9 | MLflow tracking | 🟡 | M3 | SageMaker `MlflowConfig` ✅; mirror Bedrock metrics + evals ⬜ |
-| EV-10 | W&B / Langfuse integrations | ⬜ | M5 | |
+| EV-10 | W&B / Langfuse integrations | 🟡 | M5 | `skyhammer.integrations.langfuse`: `traced(model)` records every `chat.completions.create` (streams included) as a Langfuse generation with tokens, Skyhammer's cost and errors; `log_eval` sends one trace per sample with a score per grader. `skyhammer.integrations.wandb`: `log_job` (config + per-step metrics, `follow=True` streams live) and `log_eval` (mean scores + sample table). Tested against the real SDKs offline (W&B offline mode, Langfuse in-memory OTel exporter). 🔴 live run pending (needs Langfuse keys and a W&B account) |
 
 ### 2.5 Serverless inference (no fine-tuning required)
 
@@ -278,8 +278,8 @@ PK-5 nightly (needs the CI role).
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
 DX-8 async client, DX-14 framework adapters (2026-11-01); SV-10 provisioned throughput
 built (live purchase pending a model-unit quota); TR-14 CPT and DA-11 synthetic data
-built (live runs pending). Remaining: OP-4/6 cost reporting and alerts, SE-6 cross-account,
-EV-10, PK-7 **PyPI 1.0**.
+built (live runs pending). EV-10 W&B / Langfuse built (live run pending). Remaining:
+OP-4/6 cost reporting and alerts, SE-6 cross-account, PK-7 **PyPI 1.0**.
 
 ### M6: frontier
 TR-12 agentic RL, TR-17 BYO training code, TR-20 vision, DA-10/12 multimodal and
