@@ -61,7 +61,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 |---|---|---|
 | [19_evaluation.py](19_evaluation.py) | Built-in, Python, LLM-judge and Lambda graders; deploy a grader; compare models | EV-1, EV-2, EV-3, EV-4, EV-5, EV-7 |
 | [25_managed_eval.py](25_managed_eval.py) | Bedrock managed evaluation jobs: a judge model scores answers at scale | EV-6 |
-| [38_experiment_tracking.py](38_experiment_tracking.py) | Langfuse traces of every call (tokens, cost, latency) and eval scores; W&B eval tables and live training curves | EV-10 |
+| [38_experiment_tracking.py](38_experiment_tracking.py) | Langfuse traces of every call (tokens, cost, latency) and eval scores; W&B and MLflow eval tables and live training curves (Bedrock jobs too) | EV-9, EV-10 |
 | [21_dedicated_endpoints.py](21_dedicated_endpoints.py) | SageMaker endpoints with scale-to-zero, autoscaling, `warm()`, GPU capacity fallback, multi-LoRA adapters, move to Bedrock | SV-4, SV-5, SV-6, SV-8, SV-13, SV-18, SI-19 |
 | [22_bring_your_own_weights.py](22_bring_your_own_weights.py) | Import your own HF weights into Bedrock | TR-18 |
 | [23_manage_deployments.py](23_manage_deployments.py) | List and prune idle deployments | SV-7 |

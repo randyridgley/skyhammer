@@ -18,4 +18,7 @@ Experiment tracking:
   scores (``from skyhammer.integrations import langfuse``; ``pip install "skyhammer[langfuse]"``)
 - Weights & Biases: ``log_job`` (training curves) and ``log_eval`` (scores and samples)
   (``from skyhammer.integrations import wandb``; ``pip install "skyhammer[wandb]"``)
+- MLflow: the same ``log_job`` / ``log_eval`` for Bedrock jobs and evals (SageMaker jobs
+  log natively) (``from skyhammer.integrations import mlflow``;
+  ``pip install "skyhammer[mlflow]"``)
 """

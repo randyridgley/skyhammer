@@ -4,6 +4,7 @@ with an in-memory OpenTelemetry exporter (scores captured at the client)."""
 import json
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
@@ -16,6 +17,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from skyhammer.errors import JobFailedError, SkyhammerError
 from skyhammer.evaluation import EvalRecordScore, EvalReport, EvalResult
 from skyhammer.integrations import langfuse as sh_langfuse
+from skyhammer.integrations import mlflow as sh_mlflow
 from skyhammer.integrations import wandb as sh_wandb
 from skyhammer.jobs import JobState, JobStatus
 
@@ -283,3 +285,70 @@ def test_langfuse_log_eval_scores_each_sample(langfuse: Any) -> None:
         ("correctness", 1.0, "ok"),  # None (not scored) is skipped
         ("correctness", 0.5, None),
     ]
+
+
+# ---- MLflow ----
+
+
+@pytest.fixture
+def mlruns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("MLFLOW_DISABLE_AGENT_HINT", "1")
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")  # a server or SQL store needs more deps
+    return f"file://{tmp_path}/mlruns"
+
+
+def test_mlflow_log_job_resumes_and_finishes(mlruns: str) -> None:
+    from mlflow import MlflowClient
+
+    job = FakeJob()
+    first = sh_mlflow.log_job(job, tracking_uri=mlruns)  # type: ignore[arg-type]
+    # Called again (a later poll, another process): same run, only new steps.
+    again = sh_mlflow.log_job(job, tracking_uri=mlruns, follow=True, poll_seconds=0)  # type: ignore[arg-type]
+    assert first == again
+    client = MlflowClient(tracking_uri=mlruns)
+    run = client.get_run(first)
+    assert run.info.run_name == "support-qwen-v1-ab12"
+    assert run.info.status == "FINISHED"
+    assert client.get_experiment(run.info.experiment_id).name == "support-qwen-v1"
+    assert run.data.params["hp.epochs"] == "2" and "hp.beta" not in run.data.params
+    assert run.data.tags["skyhammer.output_model_arn"] == "arn:aws:bedrock:model/x"
+    steps = [m.step for m in client.get_metric_history(first, "loss")]
+    assert steps == list(range(1, 10))  # each step once across both calls
+    assert [m.step for m in client.get_metric_history(first, "eval_loss")] == [6]
+
+
+def test_mlflow_failed_job_marks_the_run(mlruns: str) -> None:
+    from mlflow import MlflowClient
+
+    with pytest.raises(JobFailedError):
+        sh_mlflow.log_job(FakeJob(fail=True), tracking_uri=mlruns, follow=True, poll_seconds=0)  # type: ignore[arg-type]
+    (run,) = MlflowClient(tracking_uri=mlruns).search_runs(
+        [MlflowClient(tracking_uri=mlruns).get_experiment_by_name("support-qwen-v1").experiment_id]
+    )
+    assert run.info.status == "FAILED"
+
+
+def test_mlflow_skips_sagemaker_jobs_logged_natively(settings: Any) -> None:
+    job = FakeJob()
+    job.record.backend = "sagemaker"  # type: ignore[misc]
+    job._backend = SimpleNamespace(  # type: ignore[attr-defined]
+        session=SimpleNamespace(settings=settings.model_copy(update={"mlflow_arn": "arn:x"}))
+    )
+    assert sh_mlflow.log_job(job) is None  # type: ignore[arg-type]
+
+
+def test_mlflow_log_eval(mlruns: str) -> None:
+    from mlflow import MlflowClient
+
+    run_id = sh_mlflow.log_eval(RESULT, RECORDS, tracking_uri=mlruns)
+    client = MlflowClient(tracking_uri=mlruns)
+    run = client.get_run(run_id)
+    assert run.data.metrics == {"eval/exact": 0.5, "eval/judge": 0.5}
+    assert run.info.run_name == "my-model"
+    path = client.download_artifacts(run_id, "eval_samples.json")
+    table = json.loads(Path(path).read_text())
+    assert table["columns"][4:6] == ["exact", "judge"]
+    assert table["data"][1][1:3] == ["Paris", "Lyon"]
+    # Into an existing run (e.g. the training job's), under another key.
+    sh_mlflow.log_eval(REPORT, run_id=run_id, tracking_uri=mlruns, key="judge")
+    assert client.get_run(run_id).data.metrics["judge/correctness"] == 0.75

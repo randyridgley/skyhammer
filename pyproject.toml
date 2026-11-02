@@ -25,6 +25,7 @@ llama-index = ["llama-index-core>=0.14"]
 litellm = ["litellm[mcp]>=1.80"]  # mcp: LiteLLM imports it for any call with tools
 wandb = ["wandb>=0.21"]
 langfuse = ["langfuse>=5.0"]
+mlflow = ["mlflow-skinny>=3.0", "sagemaker-mlflow>=0.1"]  # plugin: SageMaker MLflow ARNs
 
 [project.urls]
 Homepage = "https://github.com/randyridgley/skyhammer"
@@ -52,6 +53,7 @@ dev = [
     "litellm[mcp]>=1.80",
     "wandb>=0.21",
     "langfuse>=5.0",
+    "mlflow-skinny>=3.0",
 ]
 
 [build-system]
