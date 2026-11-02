@@ -341,7 +341,8 @@ Resources:
               - Effect: Allow
                 Action: [bedrock-agentcore:InvokeAgentRuntime, bedrock-agentcore:StopRuntimeSession,
                          bedrock-agentcore:GetAgentRuntime]
-                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+                # Only agents named skyhammer_agent* (runtime names can't hold hyphens).
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/skyhammer_agent*"
               - Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:skyhammer-agent-*"

@@ -1,11 +1,12 @@
 """Multi-turn (agentic) RL (TR-12): train a model on whole episodes of your agent's work.
 
 SageMaker AI multi-turn RL ("MTRL") runs the training loop; your agent runs the episodes.
-For every rollout the job invokes your agent (an Amazon Bedrock AgentCore runtime, or a
-Lambda named ``skyhammer-agent-*``) with one dataset row. The agent calls the model being
-trained as often as the task needs, acts in its environment (tools, APIs, code), and
-reports one reward at the end (or one per turn). The job compares rewards across a group
-of rollouts of the same task (GRPO by default) and updates a LoRA adapter.
+For every rollout the job invokes your agent (an Amazon Bedrock AgentCore runtime named
+``skyhammer_agent*``, or a Lambda named ``skyhammer-agent-*``) with one dataset row. The
+agent calls the model being trained as often as the task needs, acts in its environment
+(tools, APIs, code), and reports one reward at the end (or one per turn). The job compares
+rewards across a group of rollouts of the same task (GRPO by default) and updates a LoRA
+adapter.
 
 Two halves:
 
@@ -68,7 +69,7 @@ LIMITS = DatasetLimits(
     source="SageMaker multi-turn RL (your agent reads the tasks)",
 )
 _AGENTCORE_ARN = re.compile(
-    r"arn:aws[\w-]*:bedrock-agentcore:(?P<region>[\w-]+):(?P<account>\d{12}):runtime/[\w-]+"
+    r"arn:aws[\w-]*:bedrock-agentcore:(?P<region>[\w-]+):(?P<account>\d{12}):runtime/(?P<name>[\w-]+)"
 )
 _LAMBDA_ARN = re.compile(
     r"arn:aws[\w-]*:lambda:(?P<region>[\w-]+):(?P<account>\d{12}):function:(?P<name>[\w-]+)"
@@ -107,6 +108,11 @@ def format_record(record: dict[str, Any]) -> dict[str, Any]:
 def agent_config(agent: str, region: str) -> dict[str, Any]:
     """AgentConfig for an AgentCore runtime or Lambda ARN in ``region``."""
     if m := _AGENTCORE_ARN.fullmatch(agent):
+        if not m["name"].startswith("skyhammer_agent"):
+            raise SkyhammerError(
+                "Name the AgentCore runtime skyhammer_agent* (the bootstrap job role may "
+                f"invoke only those), not {m['name'].rsplit('-', 1)[0]!r}"
+            )
         config: dict[str, Any] = {
             "BedrockAgentCoreConfig": {"AgentRuntimeArn": agent, "Qualifier": "DEFAULT"}
         }

@@ -375,7 +375,7 @@ def agent_rl_policy(account_id: str, *, partition: str = "aws") -> dict[str, Any
                 "Sid": "CheckAgents",
                 "Effect": "Allow",
                 "Action": "bedrock-agentcore:GetAgentRuntime",
-                "Resource": f"{arn}:bedrock-agentcore:*:{account_id}:runtime/*",
+                "Resource": f"{arn}:bedrock-agentcore:*:{account_id}:runtime/skyhammer_agent*",
             },
             {
                 "Sid": "AgentRLLogs",

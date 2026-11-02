@@ -294,10 +294,11 @@ class LLM:
         hyperparameters_extra: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> FineTuningJob:
-        """Multi-turn RL against your agent (an AgentCore runtime or ``skyhammer-agent-*``
-        Lambda ARN): each step runs ``batch_size`` tasks ``group_size`` times through the
-        agent and learns from how the rewards compare. ``max_steps`` bounds the token-billed
-        run. See ``skyhammer.agent_rl`` for the agent side and requirements."""
+        """Multi-turn RL against your agent (an AgentCore runtime named ``skyhammer_agent*``
+        or a ``skyhammer-agent-*`` Lambda ARN): each step runs ``batch_size`` tasks
+        ``group_size`` times through the agent and learns from how the rewards compare.
+        ``max_steps`` bounds the token-billed run. See ``skyhammer.agent_rl`` for the agent
+        side and requirements."""
         if kwargs.get("max_cost_usd") is not None:
             raise UnsupportedParameterError(
                 "max_cost_usd can't be enforced here: multi-turn RL is billed per token your "

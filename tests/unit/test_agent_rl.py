@@ -25,7 +25,7 @@ from skyhammer.llm import LLM
 from skyhammer.session import Session
 
 ACCOUNT = "123456789012"
-RUNTIME = f"arn:aws:bedrock-agentcore:us-east-1:{ACCOUNT}:runtime/wordle_agent-AbC123"
+RUNTIME = f"arn:aws:bedrock-agentcore:us-east-1:{ACCOUNT}:runtime/skyhammer_agent_wordle-AbC123"
 MLFLOW = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:mlflow-app/app-XYZ"
 JOB_ARN = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:job/AgentRFT/wordle-gptoss-0a1b2c3d"
 
@@ -163,6 +163,11 @@ def test_checks_before_spending(agent_session: Session) -> None:
         plan(batch_size=32, max_hours=2)
     with pytest.raises(SkyhammerError, match="is in us-west-2 but the job runs in us-east-1"):
         plan(batch_size=32, agent=RUNTIME.replace("us-east-1", "us-west-2"))
+    with pytest.raises(SkyhammerError, match=r"skyhammer_agent\* .* not 'wordle_agent'"):
+        plan(
+            batch_size=32,
+            agent=f"arn:aws:bedrock-agentcore:us-east-1:{ACCOUNT}:runtime/wordle_agent-AbC123",
+        )
     with pytest.raises(SkyhammerError, match="skyhammer-agent-"):
         plan(batch_size=32, agent=f"arn:aws:lambda:us-east-1:{ACCOUNT}:function:wordle")
     with pytest.raises(SkyhammerError, match="AgentCore runtime ARN"):
@@ -424,6 +429,7 @@ def test_iam_policy_and_bootstrap_role() -> None:
     assert by_sid["PassAgentJobRole"]["Condition"] == {
         "StringEquals": {"iam:PassedToService": "job.sagemaker.amazonaws.com"}
     }
+    assert by_sid["CheckAgents"]["Resource"].endswith(":runtime/skyhammer_agent*")
     assert len(json.dumps(policy)) < 6144
 
     class Loader(yaml.SafeLoader):
@@ -446,4 +452,7 @@ def test_iam_policy_and_bootstrap_role() -> None:
     assert trust["Action"] == ["sts:AssumeRole", "sts:TagSession"]
     # Scoped to Skyhammer's bucket, not AmazonSageMakerJobFullAccess's every bucket.
     assert role["ManagedPolicyArns"] == [{"Ref": "DataAccessPolicy"}]
+    statements = role["Policies"][0]["PolicyDocument"]["Statement"]
+    invoke = next(st for st in statements if "bedrock-agentcore:InvokeAgentRuntime" in st["Action"])
+    assert invoke["Resource"]["Sub"].endswith(":runtime/skyhammer_agent*")
     assert "AgentJobRoleArn" in t["Outputs"]

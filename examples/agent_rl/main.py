@@ -5,9 +5,10 @@ through one tool, ``guess(n)``, which answers "higher", "lower" or "correct", fo
 seven guesses. The reward is outcome first: any solve beats any loss, and a faster solve
 beats a slower one.
 
-Deploy it to Amazon Bedrock AgentCore (with this folder's requirements.txt) and give its
-runtime role the AWS managed policy AmazonSageMakerJobRuntimeAccess, which lets it call
-the model being trained and report rewards.
+Deploy it to Amazon Bedrock AgentCore as a runtime named skyhammer_agent_guess, with this
+folder's requirements.txt (the training job may invoke only skyhammer_agent* runtimes).
+Give its runtime role the AWS managed policy AmazonSageMakerJobRuntimeAccess, which lets
+it call the model being trained and report rewards.
 """
 
 import json

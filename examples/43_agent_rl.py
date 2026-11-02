@@ -3,8 +3,9 @@
 The job sends each task to your agent, which plays it out with the model being trained
 (several turns of tool calls) and reports a reward; the model learns from how rewards
 compare across rollouts of the same task. The agent here is a number-guessing game in
-agent_rl/main.py. Deploy it to Amazon Bedrock AgentCore first (its runtime role needs
-the AWS managed policy AmazonSageMakerJobRuntimeAccess) and set AGENT_RUNTIME_ARN.
+agent_rl/main.py. Deploy it to Amazon Bedrock AgentCore first as a runtime named
+skyhammer_agent_guess (its role needs the AWS managed policy
+AmazonSageMakerJobRuntimeAccess) and set AGENT_RUNTIME_ARN.
 
 Also needed: a SageMaker MLflow App (settings ``mlflow_arn``; the service logs rewards
 and trajectories there), `skyhammer bootstrap` (adds the job role) and the extra IAM
