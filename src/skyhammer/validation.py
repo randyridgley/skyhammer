@@ -147,6 +147,8 @@ def _check_chat(messages: Any, *, require_final: str) -> list[str]:
 
 
 def _record_text(record: Record, technique: Technique) -> str:
+    if technique is Technique.CUSTOM:  # any JSON object; your code reads it
+        return json.dumps(record, ensure_ascii=False)
     if technique is Technique.CPT:
         return str(record.get("text", ""))
     if technique is Technique.DPO:
@@ -163,6 +165,8 @@ def _record_text(record: Record, technique: Technique) -> str:
 def _check_record(record: Any, technique: Technique) -> list[str]:
     if not isinstance(record, dict):
         return ["row must be a JSON object"]
+    if technique is Technique.CUSTOM:
+        return []
     if technique is Technique.CPT:
         text = record.get("text")
         return (
@@ -239,7 +243,11 @@ def _repair_messages(messages: Any) -> list[Any] | None:
 
 
 def _repair_roles(record: Any, technique: Technique) -> Record | None:
-    if not isinstance(record, dict) or technique in (Technique.CPT, Technique.DPO):
+    if not isinstance(record, dict) or technique in (
+        Technique.CPT,
+        Technique.DPO,
+        Technique.CUSTOM,
+    ):
         return None
     fixed = _repair_messages(record.get("messages"))
     return None if fixed is None else {**record, "messages": fixed}
@@ -249,7 +257,7 @@ def _truncate(
     record: Record, technique: Technique, limit: int, count: TokenCounter
 ) -> Record | None:
     """Drop the oldest exchanges until ``record`` fits ``limit``; None if it can't."""
-    if technique in (Technique.CPT, Technique.DPO):
+    if technique in (Technique.CPT, Technique.DPO, Technique.CUSTOM):
         return None
     msgs = record["messages"]
     head = msgs[:1] if msgs[0].get("role") == "system" else []

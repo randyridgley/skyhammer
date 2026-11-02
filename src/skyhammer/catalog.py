@@ -18,6 +18,12 @@ class Technique(StrEnum):
     DPO = "dpo"
     RFT = "rft"
     CPT = "cpt"
+    CUSTOM = "custom"  # your own training code (skyhammer.custom_training)
+
+
+# Plain SageMaker training jobs (Skyhammer's or your script on a GPU instance, billed per
+# instance-hour), not serverless customization recipes.
+JOB_TECHNIQUES = frozenset({Technique.CPT, Technique.CUSTOM})
 
 
 class BackendKind(StrEnum):
@@ -148,7 +154,9 @@ _SM_ALL = [Technique.SFT, Technique.DPO, Technique.RFT]
 # Open dense text models also take continued pre-training (skyhammer.pretrain), which
 # trains from their JumpStart Hugging Face weights. Not GPT-OSS (MXFP4 weights) or Gemma
 # (a vision model).
-_SM_TEXT = [*_SM_ALL, Technique.CPT]
+_SM_TEXT = [*_SM_ALL, Technique.CPT, Technique.CUSTOM]
+# Your own training code runs on any open-weight SageMaker model (gated Llama excluded).
+_SM_OPEN = [*_SM_ALL, Technique.CUSTOM]
 
 CATALOG: dict[str, ModelEntry] = {
     e.alias: e
@@ -287,7 +295,7 @@ CATALOG: dict[str, ModelEntry] = {
             # Bedrock RFT of GPT-OSS is OpenAI-compatible-API only (see Qwen3-32B above).
             capabilities=[
                 _mantle(Technique.RFT, "openai.gpt-oss-20b", _W2),
-                *_sm(_SM_ALL, "openai-reasoning-gpt-oss-20b"),
+                *_sm(_SM_OPEN, "openai-reasoning-gpt-oss-20b"),
             ],
             bedrock_serving_regions=_E1,  # GPT-OSS import is us-east-1 only
         ),
@@ -297,7 +305,7 @@ CATALOG: dict[str, ModelEntry] = {
             params_b=31,
             family="gemma",
             display_name="Gemma 4 31B",
-            capabilities=_sm(_SM_ALL, "huggingface-vlm-gemma-4-31b-it"),
+            capabilities=_sm(_SM_OPEN, "huggingface-vlm-gemma-4-31b-it"),
             bedrock_serving_regions=frozenset(),
         ),
     ]

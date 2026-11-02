@@ -96,7 +96,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-14 | Continued pre-training | 🟡 | M5 | `create_cpt_job` on open dense models (Qwen3, Qwen2.5, DeepSeek R1 Distill): `{"text"}` documents packed into blocks, LoRA (merged) or full, as a SageMaker training job with the HF PyTorch DLC and Skyhammer's `cpt_train.py`, base weights from the open JumpStart artifacts, sized to one GPU instance and capped by `max_hours` (instance-hour Price List estimate); output imports into Bedrock. Checked live 2026-11-01: no Bedrock model offers CONTINUED_PRE_TRAINING any more, and Nova CPT is HyperPod-only (8-24 ml.p5.48xlarge), so Nova raises a clear error. 🔴 live run pending (Qwen3 0.6B, ~$1) |
 | TR-15 | Checkpoint listing, eval and resume | 🟡 | M4 | `job.checkpoints()`: step, metrics and location. SageMaker: `step_NNNN` FSDP training state in S3 with that step's metrics (live 2026-10-30). bedrock-mantle: callable checkpoint models (`checkpoint.llm()`), unit-tested. Bedrock customization keeps none. Not yet: resuming from a checkpoint, converting SageMaker checkpoints to servable weights |
 | TR-16 | Continued fine-tuning of a fine-tuned model | ✅ | M4 | `LLM.get(name).create_sft_job(...)` trains the fine-tune further on its own backend and region. SageMaker (`SourceModelPackageArn` from the earlier job's registered package): live 2026-10-30, Qwen3-0.6B LoRA v1 → v2 completed. Bedrock (custom model ARN as `baseModelIdentifier`): live 2026-10-30, Nova Micro SFT v1 → v2 completed (about 4 h for v2) |
-| TR-17 | BYO training code / custom loops | ⬜ | M6 | SageMaker training job with user container → import |
+| TR-17 | BYO training code / custom loops | 🟡 | M6 | `create_custom_job(ds, source_dir=, entry_point=)` (script mode in the HF PyTorch DLC, `requirements.txt` installed) or `image=` (your container): base weights as the `model` channel, rows passed through unchanged, every hyperparameter forwarded, `instance_type` or sized by model, `max_hours` cap (default 4h), output imported into Bedrock; code is snapshotted and hashed into the job name. Open-weight SageMaker models (gated Llama excluded). 🔴 live run pending (Qwen3 0.6B, ~$1) |
 | TR-18 | Bring your own weights (import only) | ✅ | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. Live 2026-10-30: Qwen3-0.6B from Hugging Face → S3 → import (12.6 min) → chat → delete |
 | TR-19 | Live job logs and metrics | ✅ | M1.5 | SageMaker concise stream; Bedrock step-metrics CSV |
 | TR-20 | Vision fine-tuning | ⬜ | M6 | Nova Lite/Pro, Qwen-VL |
@@ -282,8 +282,8 @@ built (live runs pending). EV-10 W&B / Langfuse and SE-6 cross-account built (li
 pending). Remaining: OP-4 cost reporting (confirm), PK-7 **PyPI 1.0**.
 
 ### M6: frontier
-TR-12 agentic RL, TR-17 BYO training code, TR-20 vision, DA-10/12 multimodal and
-mixing, SV-14 quantization/speculative decoding.
+TR-17 BYO training code built (live run pending). Remaining: TR-12 agentic RL, TR-20
+vision, DA-10/12 multimodal and mixing, SV-14 quantization/speculative decoding.
 
 ## 4. Known risks and open questions
 

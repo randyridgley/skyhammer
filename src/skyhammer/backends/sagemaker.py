@@ -34,7 +34,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from skyhammer import pretrain
+from skyhammer import custom_training, pretrain
 from skyhammer import tags as tagging
 from skyhammer.backends.base import DeploymentRef, DeployOptions
 from skyhammer.catalog import (
@@ -142,7 +142,9 @@ def _technique(
         return "RLVR", evaluator_arn
     if t is Technique.DISTILLATION:  # LLM.create_distillation_job runs teacher answers + SFT
         raise UnsupportedParameterError("use LLM.create_distillation_job for open-weight students")
-    raise UnsupportedParameterError("CPT runs as a training job (skyhammer.pretrain), not a recipe")
+    raise UnsupportedParameterError(
+        f"{t.value} runs as a training job (skyhammer.pretrain / custom_training), not a recipe"
+    )
 
 
 def recipe_hyperparameters(
@@ -238,6 +240,8 @@ class SageMakerServerlessBackend:
         """Max tokens per sample = the longest recipe AWS offers for this model/technique."""
         if technique is Technique.CPT:
             return pretrain.CPT_LIMITS
+        if technique is Technique.CUSTOM:  # your code reads the rows; only size bounds
+            return custom_training.LIMITS
         hub_tech = {Technique.SFT: "SFT", Technique.DPO: "DPO", Technique.RFT: "RLVR"}.get(
             technique
         )
@@ -268,6 +272,8 @@ class SageMakerServerlessBackend:
     def format_record(self, technique: Technique, record: dict[str, Any]) -> dict[str, Any]:
         if technique is Technique.CPT:
             return {"text": record["text"]}
+        if technique is Technique.CUSTOM:
+            return record
         if technique is Technique.DPO:
             return to_sagemaker_dpo(record)
         if technique is Technique.RFT:
@@ -285,6 +291,9 @@ class SageMakerServerlessBackend:
         if request.technique is Technique.CPT:
             hub_model = self.hub.model(request.route.capability.backend_model_id)
             return None, pretrain.check(request, hub_model)
+        if request.technique is Technique.CUSTOM:
+            hub_model = self.hub.model(request.route.capability.backend_model_id)
+            return None, custom_training.check(request, hub_model)
         technique, _ = _technique(request, evaluator_arn)
         hub_model = self.hub.model(request.route.capability.backend_model_id)
         if hub_model.gated and not request.accept_eula:
@@ -410,6 +419,19 @@ class SageMakerServerlessBackend:
                 validation_uri=validation_uri,
                 output_uri=f"{prefix}/output/",
                 script_uri=pretrain.upload_script(self.session, self.region),
+            )
+            resp = self.sagemaker.create_training_job(**kwargs)
+            return JobHandle(self.name, request.job_name, resp["TrainingJobArn"], self.region)
+        if request.technique is Technique.CUSTOM:
+            kwargs = custom_training.build_request(
+                self.session,
+                self.region,
+                request,
+                self.hub.model(request.route.capability.backend_model_id),
+                training_uri=training_uri,
+                validation_uri=validation_uri,
+                output_uri=f"{prefix}/output/",
+                code_uri=custom_training.upload_code(self.session, self.region, request.code),
             )
             resp = self.sagemaker.create_training_job(**kwargs)
             return JobHandle(self.name, request.job_name, resp["TrainingJobArn"], self.region)

@@ -13,6 +13,7 @@ from skyhammer.backends.sagemaker import resolve_model_dir
 from skyhammer.batch import BatchJob
 from skyhammer.catalog import (
     CATALOG,
+    JOB_TECHNIQUES,
     BackendKind,
     ModelEntry,
     ServingTarget,
@@ -20,6 +21,7 @@ from skyhammer.catalog import (
     TrainingType,
     get_model,
 )
+from skyhammer.custom_training import TrainingCode
 from skyhammer.dataset import Dataset
 from skyhammer.deployment import Deployment
 from skyhammer.embeddings import Embeddings, RerankResponse, rerank
@@ -252,6 +254,35 @@ class LLM:
     ) -> FineTuningJob:
         return self._create_job(Technique.CPT, dataset, output_model=output_model, **kwargs)
 
+    def create_custom_job(
+        self,
+        dataset: Dataset,
+        *,
+        output_model: str,
+        source_dir: str | None = None,
+        entry_point: str = "train.py",
+        image: str | None = None,
+        environment: dict[str, str] | None = None,
+        instance_type: str | None = None,
+        hyperparameters_extra: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> FineTuningJob:
+        """Train with your own code (a script directory or a container) on a SageMaker GPU
+        instance, starting from this model's open weights; the result imports into Bedrock.
+        See ``skyhammer.custom_training`` for what the job receives and must write."""
+        code = TrainingCode(source_dir, entry_point, image, dict(environment or {}))
+        extra = dict(hyperparameters_extra or {})
+        if instance_type:
+            extra["instance_type"] = instance_type
+        return self._create_job(
+            Technique.CUSTOM,
+            dataset,
+            output_model=output_model,
+            code=code,
+            hyperparameters_extra=extra,
+            **kwargs,
+        )
+
     def plan(
         self,
         technique: str | Technique,
@@ -270,6 +301,7 @@ class LLM:
         tags: dict[str, str] | None = None,
         hyperparameters_extra: dict[str, Any] | None = None,
         max_hours: float | None = None,
+        code: TrainingCode | None = None,
         **hyperparameters: Any,
     ) -> tuple[TrainingRequest, cost.CostEstimate]:
         """Resolve route, validate data, and estimate cost without touching AWS.
@@ -366,6 +398,7 @@ class LLM:
             grader=grader,
             accept_eula=accept_eula,
             source_model=source_model,
+            code=code,
         )
         request.tags = tagging.build_tags(
             {
@@ -379,16 +412,20 @@ class LLM:
             },
             {**settings.tags, **(tags or {})},
         )
-        if technique is Technique.CPT:  # a training job, billed per instance-hour
+        if technique in JOB_TECHNIQUES:  # a training job, billed per instance-hour
             price = pricing.instance_price(
                 self.session, route.region, pretrain.instance_type(request)
             )
         else:
             price = pricing.training_price(self.session, route, technique, ttype)
-        if price.usd_per_hour is not None or technique in (Technique.RFT, Technique.CPT):
+        if (
+            price.usd_per_hour is not None
+            or technique is Technique.RFT
+            or (technique in JOB_TECHNIQUES)
+        ):
             if route.backend is not BackendKind.SAGEMAKER and max_hours is not None:
                 raise UnsupportedParameterError(
-                    "max_hours applies to time-billed SageMaker jobs (RL, CPT) only"
+                    "max_hours applies to time-billed SageMaker jobs (RL, CPT, custom) only"
                 )
             if route.backend in (BackendKind.BEDROCK, BackendKind.MANTLE):
                 log.warning(

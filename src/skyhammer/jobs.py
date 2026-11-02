@@ -63,6 +63,8 @@ class TrainingRequest:
     # Continued customization: the fine-tune to train further (Bedrock custom model ARN or
     # SageMaker model package ARN) instead of the base model.
     source_model: str | None = None
+    # Your own training code (Technique.CUSTOM): a TrainingCode from skyhammer.custom_training.
+    code: Any = None
 
     def fingerprint(self) -> str:
         """Stable hash of everything that affects training. Same request -> same job."""
@@ -82,6 +84,8 @@ class TrainingRequest:
         }
         if self.source_model:  # only when set, so existing jobs keep their names
             payload["source"] = self.source_model
+        if self.code is not None:  # a code change is a new job
+            payload["code"] = self.code.fingerprint()
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
     @property

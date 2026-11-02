@@ -74,13 +74,15 @@ def memory_gb(params_b: float, training_type: TrainingType) -> float:
 
 def instance_for(params_b: float | None, training_type: TrainingType) -> str:
     if params_b is None:
-        raise SkyhammerError("CPT needs the model size; pass hyperparameters_extra.instance_type")
+        raise SkyhammerError(
+            "Unknown model size; pass hyperparameters_extra={'instance_type': ...}"
+        )
     need = memory_gb(params_b, training_type)
     for name, gb in INSTANCES:
         if gb >= need:
             return name
     raise UnsupportedParameterError(
-        f"{training_type.value} CPT of a {params_b:g}B model needs ~{need:.0f} GB of GPU "
+        f"{training_type.value} training of a {params_b:g}B model needs ~{need:.0f} GB of GPU "
         "memory; use LoRA or pass hyperparameters_extra.instance_type"
     )
 
@@ -149,15 +151,72 @@ def script_bundle() -> bytes:
     return data[:4] + b"\0\0\0\0" + data[8:]
 
 
-def upload_script(session: Session, region: str) -> str:
+def upload_bundle(session: Session, region: str, data: bytes, kind: str) -> str:
+    """Upload a sourcedir.tar.gz, named by its hash so identical code is stored once."""
     res = session.resources_for(region)
-    data = script_bundle()
-    key = f"code/cpt/{hashlib.sha256(data).hexdigest()[:16]}/sourcedir.tar.gz"
+    key = f"code/{kind}/{hashlib.sha256(data).hexdigest()[:16]}/sourcedir.tar.gz"
     extra = {"ServerSideEncryption": "aws:kms", "SSEKMSKeyId": res.kms_key_arn}
     session.client("s3", region=region).put_object(
         Bucket=res.bucket, Key=key, Body=data, **(extra if res.kms_key_arn else {})
     )
     return f"s3://{res.bucket}/{key}"
+
+
+def upload_script(session: Session, region: str) -> str:
+    return upload_bundle(session, region, script_bundle(), "cpt")
+
+
+def job_request(
+    session: Session,
+    region: str,
+    request: TrainingRequest,
+    hub_model: HubModel,
+    *,
+    image: str,
+    hyperparameters: dict[str, str],
+    instance: str,
+    training_uri: str,
+    validation_uri: str | None,
+    output_uri: str,
+    environment: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """CreateTrainingJob kwargs for a one-instance GPU training job that starts from the
+    model's open JumpStart weights (the "model" channel) and leaves Hugging Face weights in
+    /opt/ml/model, uncompressed, so Bedrock imports them as is. No AWS calls."""
+    from skyhammer.backends.sagemaker import _channel
+
+    assert hub_model.base is not None
+    res = session.resources_for(region)
+    channels = [_channel("model", hub_model.base.artifact_uri), _channel("train", training_uri)]
+    if validation_uri:
+        channels.append(_channel("validation", validation_uri))
+    output: dict[str, Any] = {"S3OutputPath": output_uri, "CompressionType": "NONE"}
+    if res.kms_key_arn:
+        output["KmsKeyId"] = res.kms_key_arn
+    vpc = session.settings.vpc_for(region)
+    max_hours = request.max_hours or 4.0
+    return {
+        "TrainingJobName": request.job_name,
+        "RoleArn": res.sagemaker_role_arn,
+        "AlgorithmSpecification": {"TrainingImage": image, "TrainingInputMode": "File"},
+        "HyperParameters": hyperparameters,
+        **({"Environment": environment} if environment else {}),
+        "InputDataConfig": channels,
+        "OutputDataConfig": output,
+        "ResourceConfig": {
+            "InstanceType": instance,
+            "InstanceCount": 1,
+            "VolumeSizeInGB": max(50, int((request.route.model.params_b or 8) * 8)),
+            **({"VolumeKmsKeyId": res.kms_key_arn} if res.kms_key_arn else {}),
+        },
+        "StoppingCondition": {"MaxRuntimeInSeconds": int(max_hours * 3600)},
+        **(
+            {"VpcConfig": {"SecurityGroupIds": vpc.security_group_ids, "Subnets": vpc.subnet_ids}}
+            if vpc
+            else {}
+        ),
+        "Tags": tagging.as_aws(request.tags),
+    }
 
 
 def build_request(
@@ -172,45 +231,20 @@ def build_request(
     script_uri: str,
 ) -> dict[str, Any]:
     """CreateTrainingJob kwargs for a CPT job (no AWS calls)."""
-    from skyhammer.backends.sagemaker import _channel
-
     hp = check(request, hub_model)
-    assert hub_model.base is not None
-    res = session.resources_for(region)
-    model_channel = _channel("model", hub_model.base.artifact_uri)
-    channels = [model_channel, _channel("train", training_uri)]
-    if validation_uri:
-        channels.append(_channel("validation", validation_uri))
-    output: dict[str, Any] = {"S3OutputPath": output_uri, "CompressionType": "NONE"}
-    if res.kms_key_arn:
-        output["KmsKeyId"] = res.kms_key_arn
-    vpc = session.settings.vpc_for(region)
-    max_hours = request.max_hours or 4.0
-    return {
-        "TrainingJobName": request.job_name,
-        "RoleArn": res.sagemaker_role_arn,
-        "AlgorithmSpecification": {
-            "TrainingImage": IMAGE.format(region=region),
-            "TrainingInputMode": "File",
-        },
-        "HyperParameters": {
+    return job_request(
+        session,
+        region,
+        request,
+        hub_model,
+        image=IMAGE.format(region=region),
+        hyperparameters={
             **hp,
             "sagemaker_program": json.dumps(SCRIPT),
             "sagemaker_submit_directory": json.dumps(script_uri),
         },
-        "InputDataConfig": channels,
-        "OutputDataConfig": output,
-        "ResourceConfig": {
-            "InstanceType": instance_type(request),
-            "InstanceCount": 1,
-            "VolumeSizeInGB": max(50, int((request.route.model.params_b or 8) * 8)),
-            **({"VolumeKmsKeyId": res.kms_key_arn} if res.kms_key_arn else {}),
-        },
-        "StoppingCondition": {"MaxRuntimeInSeconds": int(max_hours * 3600)},
-        **(
-            {"VpcConfig": {"SecurityGroupIds": vpc.security_group_ids, "Subnets": vpc.subnet_ids}}
-            if vpc
-            else {}
-        ),
-        "Tags": tagging.as_aws(request.tags),
-    }
+        instance=instance_type(request),
+        training_uri=training_uri,
+        validation_uri=validation_uri,
+        output_uri=output_uri,
+    )
