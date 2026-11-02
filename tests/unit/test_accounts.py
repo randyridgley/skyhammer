@@ -311,14 +311,21 @@ def test_template_grants_are_conditional() -> None:
         for name, statements in granted.items()
     }
     assert conditions == {
-        "Key": ["ShareModels"],
+        "Key": ["ShareModels", "ShareModels"],
         "BucketPolicy": ["ShareModels", "ShareModels"],
         "DataAccessPolicy": ["TrustSources", "TrustSources"],
     }
     trust = granted["DataAccessPolicy"][-1]["If"][1]
-    assert trust["Condition"] == {
-        "StringEquals": {"aws:ResourceAccount": {"Ref": "TrustedSourceAccounts"}}
+    assert trust["Condition"]["StringEquals"] == {
+        "aws:ResourceAccount": {"Ref": "TrustedSourceAccounts"}
     }
+    # The shared key is usable only through Bedrock or S3; grants only for AWS resources.
+    decrypt, grants = (s["If"][1] for s in granted["Key"] if isinstance(s, dict) and "If" in s)
+    assert "kms:ViaService" in decrypt["Condition"]["StringLike"]
+    assert "kms:CreateGrant" not in decrypt["Action"]
+    assert grants["Condition"]["Bool"] == {"kms:GrantIsForAWSResource": "true"}
+    weights = granted["BucketPolicy"][1]["If"][1]
+    assert weights["Resource"] == {"Sub": "${Bucket.Arn}/jobs/*/output/model/*"}
 
 
 def test_cross_account_policy_is_small_and_scoped() -> None:

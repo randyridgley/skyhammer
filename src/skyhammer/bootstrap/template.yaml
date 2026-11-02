@@ -65,13 +65,28 @@ Resources:
               ArnLike:
                 aws:SourceArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*"
           # Promotion (SE-6): another account copies or imports models encrypted with this key.
+          # Only through Bedrock (model copy, import) or this region's S3 (the weights).
           - !If
             - ShareModels
             - Sid: ShareModelsWithAccounts
               Effect: Allow
               Principal: {AWS: !Ref ShareWithAccounts}
-              Action: [kms:Decrypt, kms:DescribeKey, kms:CreateGrant]
+              Action: [kms:Decrypt, kms:DescribeKey]
               Resource: "*"
+              Condition:
+                StringLike:
+                  kms:ViaService: ["bedrock.*.amazonaws.com", !Sub "s3.${AWS::Region}.amazonaws.com"]
+            - !Ref AWS::NoValue
+          - !If
+            - ShareModels
+            - Sid: ShareModelsGrants
+              Effect: Allow
+              Principal: {AWS: !Ref ShareWithAccounts}
+              Action: kms:CreateGrant
+              Resource: "*"
+              Condition:
+                Bool: {kms:GrantIsForAWSResource: "true"}
+                StringLike: {kms:ViaService: "bedrock.*.amazonaws.com"}
             - !Ref AWS::NoValue
 
   KeyAlias:
@@ -119,8 +134,8 @@ Resources:
             - Sid: ShareModelWeights
               Effect: Allow
               Principal: {AWS: !Ref ShareWithAccounts}
-              Action: s3:GetObject
-              Resource: [!Sub "${Bucket.Arn}/jobs/*", !Sub "${Bucket.Arn}/models/*"]
+              Action: s3:GetObject  # trained weights only, not datasets or job inputs
+              Resource: !Sub "${Bucket.Arn}/jobs/*/output/model/*"
             - !Ref AWS::NoValue
           - !If
             - ShareModels
@@ -129,7 +144,7 @@ Resources:
               Principal: {AWS: !Ref ShareWithAccounts}
               Action: s3:ListBucket
               Resource: !GetAtt Bucket.Arn
-              Condition: {StringLike: {s3:prefix: ["jobs/*", "models/*"]}}
+              Condition: {StringLike: {s3:prefix: "jobs/*/output/model/*"}}
             - !Ref AWS::NoValue
 
   DataAccessPolicy:
@@ -162,7 +177,9 @@ Resources:
             - Effect: Allow
               Action: [kms:Decrypt, kms:DescribeKey, kms:CreateGrant]
               Resource: "*"
-              Condition: {StringEquals: {aws:ResourceAccount: !Ref TrustedSourceAccounts}}
+              Condition:
+                StringEquals: {aws:ResourceAccount: !Ref TrustedSourceAccounts}
+                StringLike: {kms:ViaService: ["bedrock.*.amazonaws.com", "s3.*.amazonaws.com"]}
             - !Ref AWS::NoValue
 
   # VPC-only jobs: only created when bootstrap is given subnets, and limited to them.
