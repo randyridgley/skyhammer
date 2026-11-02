@@ -316,9 +316,9 @@ class Provisioned:
         if TAG not in tags:  # untagged capacity would be invisible to list, prune and sweep
             raise SkyhammerError(f"Provisioned Throughput needs a {TAG} tag")
         existing = self.find(name)
+        if existing and TAG not in self._tags(existing.arn):  # failed or not, never touch it
+            raise SkyhammerError(f"{name} wasn't created by Skyhammer; pick another name")
         if existing and existing.status != "Failed":
-            if TAG not in self._tags(existing.arn):
-                raise SkyhammerError(f"{name} wasn't created by Skyhammer; pick another name")
             if existing.model_units != model_units:
                 raise SkyhammerError(
                     f"{name} has {existing.model_units} model unit(s) and Bedrock can't change "

@@ -180,6 +180,7 @@ def test_failed_purchases_are_replaced_and_foreign_names_refused(
     session: Session, fake: FakeBedrock
 ) -> None:
     fake.pts["arn:failed"] = pt("support-pt", "arn:failed", CUSTOM, "Failed")
+    fake.tags["arn:failed"] = {"skyhammer:name": "support-nova"}  # ours: safe to replace
     fake.pts["arn:theirs"] = pt("their-pt", "arn:theirs", CUSTOM, "InService")
     p = Provisioned(session)
     p.purchase("support-pt", CUSTOM, model_units=2, commitment="OneMonth", tags=TAGS)
@@ -189,6 +190,10 @@ def test_failed_purchases_are_replaced_and_foreign_names_refused(
         p.purchase("their-pt", CUSTOM, model_units=1, commitment=None, tags=TAGS)
     with pytest.raises(SkyhammerError, match="wasn't created by Skyhammer"):
         p.delete("their-pt")
+    fake.pts["arn:theirs-failed"] = pt("their-failed", "arn:theirs-failed", CUSTOM, "Failed")
+    with pytest.raises(SkyhammerError, match="wasn't created by Skyhammer"):
+        p.purchase("their-failed", CUSTOM, model_units=1, commitment=None, tags=TAGS)
+    assert "arn:theirs-failed" in fake.pts  # someone else's failed PT is never deleted
     with pytest.raises(SkyhammerError, match="at least 1"):
         p.purchase("x", CUSTOM, model_units=0, commitment=None, tags=TAGS)
     with pytest.raises(SkyhammerError, match="skyhammer:name"):
