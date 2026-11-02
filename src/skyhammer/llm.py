@@ -283,6 +283,38 @@ class LLM:
             **kwargs,
         )
 
+    def create_agent_rl_job(
+        self,
+        tasks: Dataset,
+        *,
+        agent: str,
+        output_model: str,
+        max_steps: int,
+        group_size: int | None = None,
+        hyperparameters_extra: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> FineTuningJob:
+        """Multi-turn RL against your agent (an AgentCore runtime or ``skyhammer-agent-*``
+        Lambda ARN): each step runs ``batch_size`` tasks ``group_size`` times through the
+        agent and learns from how the rewards compare. ``max_steps`` bounds the token-billed
+        run. See ``skyhammer.agent_rl`` for the agent side and requirements."""
+        if kwargs.get("max_cost_usd") is not None:
+            raise UnsupportedParameterError(
+                "max_cost_usd can't be enforced here: multi-turn RL is billed per token your "
+                "agent's episodes use, which isn't known up front. Bound it with max_steps"
+            )
+        extra = {"max_steps": max_steps, **(hyperparameters_extra or {})}
+        if group_size is not None:
+            extra["group_size"] = group_size
+        return self._create_job(
+            Technique.AGENTIC,
+            tasks,
+            output_model=output_model,
+            agent=agent,
+            hyperparameters_extra=extra,
+            **kwargs,
+        )
+
     def plan(
         self,
         technique: str | Technique,
@@ -302,6 +334,7 @@ class LLM:
         hyperparameters_extra: dict[str, Any] | None = None,
         max_hours: float | None = None,
         code: TrainingCode | None = None,
+        agent: str | None = None,
         **hyperparameters: Any,
     ) -> tuple[TrainingRequest, cost.CostEstimate]:
         """Resolve route, validate data, and estimate cost without touching AWS.
@@ -399,6 +432,7 @@ class LLM:
             accept_eula=accept_eula,
             source_model=source_model,
             code=code,
+            agent=agent,
         )
         request.tags = tagging.build_tags(
             {
@@ -412,6 +446,21 @@ class LLM:
             },
             {**settings.tags, **(tags or {})},
         )
+        if technique is Technique.AGENTIC:
+            if max_hours is not None:
+                raise UnsupportedParameterError(
+                    "Multi-turn RL is billed per token, not by time; bound it with max_steps"
+                )
+            get_backend(route.backend, self.session, route.region).check(request)  # type: ignore[attr-defined]
+            return request, cost.CostEstimate(
+                dataset.report.estimated_tokens,
+                None,
+                (
+                    "billed per token (prefill, sample, train) for every turn your agent "
+                    "takes, so not estimable up front; max_steps bounds the run and the "
+                    "finished job reports the tokens it billed",
+                ),
+            )
         if technique in JOB_TECHNIQUES:  # a training job, billed per instance-hour
             price = pricing.instance_price(
                 self.session, route.region, pretrain.instance_type(request)

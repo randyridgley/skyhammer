@@ -34,7 +34,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from skyhammer import custom_training, pretrain
+from skyhammer import agent_rl, custom_training, pretrain
 from skyhammer import tags as tagging
 from skyhammer.backends.base import DeploymentRef, DeployOptions
 from skyhammer.catalog import (
@@ -242,6 +242,8 @@ class SageMakerServerlessBackend:
             return pretrain.CPT_LIMITS
         if technique is Technique.CUSTOM:  # your code reads the rows; only size bounds
             return custom_training.LIMITS
+        if technique is Technique.AGENTIC:  # tasks for your agent
+            return agent_rl.LIMITS
         hub_tech = {Technique.SFT: "SFT", Technique.DPO: "DPO", Technique.RFT: "RLVR"}.get(
             technique
         )
@@ -274,6 +276,8 @@ class SageMakerServerlessBackend:
             return {"text": record["text"]}
         if technique is Technique.CUSTOM:
             return record
+        if technique is Technique.AGENTIC:
+            return agent_rl.format_record(record)
         if technique is Technique.DPO:
             return to_sagemaker_dpo(record)
         if technique is Technique.RFT:
@@ -294,6 +298,9 @@ class SageMakerServerlessBackend:
         if request.technique is Technique.CUSTOM:
             hub_model = self.hub.model(request.route.capability.backend_model_id)
             return None, custom_training.check(request, hub_model)
+        if request.technique is Technique.AGENTIC:
+            hub_model = self.hub.model(request.route.capability.backend_model_id)
+            return None, agent_rl.check(request, hub_model, self.hub.params)
         technique, _ = _technique(request, evaluator_arn)
         hub_model = self.hub.model(request.route.capability.backend_model_id)
         if hub_model.gated and not request.accept_eula:
@@ -392,6 +399,18 @@ class SageMakerServerlessBackend:
         }
 
     def find(self, request: TrainingRequest) -> JobHandle | None:
+        if request.technique is Technique.AGENTIC:
+            try:
+                job = self.sagemaker.describe_job(
+                    JobName=request.job_name, JobCategory=agent_rl.JOB_CATEGORY
+                )
+            except ClientError as e:
+                if e.response["Error"]["Code"] in ("ResourceNotFound", "ValidationException") or (
+                    "not found" in str(e).lower() or "does not exist" in str(e).lower()
+                ):
+                    return None
+                raise
+            return JobHandle(self.name, request.job_name, job["JobArn"], self.region)
         resp = self.sagemaker.list_training_jobs(NameContains=request.job_name)
         for job in resp.get("TrainingJobSummaries", []):
             if job["TrainingJobName"] == request.job_name:
@@ -422,6 +441,8 @@ class SageMakerServerlessBackend:
             )
             resp = self.sagemaker.create_training_job(**kwargs)
             return JobHandle(self.name, request.job_name, resp["TrainingJobArn"], self.region)
+        if request.technique is Technique.AGENTIC:
+            return self._submit_agent_rl(request, training_uri, validation_uri, f"{prefix}/output/")
         if request.technique is Technique.CUSTOM:
             kwargs = custom_training.build_request(
                 self.session,
@@ -521,9 +542,46 @@ class SageMakerServerlessBackend:
                 return
             time.sleep(2)
 
-    def ensure_model_package_group(self, request: TrainingRequest) -> str:
+    def _submit_agent_rl(
+        self,
+        request: TrainingRequest,
+        training_uri: str,
+        validation_uri: str | None,
+        output_uri: str,
+    ) -> JobHandle:
+        res = self.session.resources_for(self.region)
+        if not res.agent_job_role_arn:
+            raise SkyhammerError(
+                "Multi-turn RL needs the bootstrap AgentJobRole; run `skyhammer bootstrap` "
+                f"again in {self.region} to add it"
+            )
+        mlflow_arn = agent_rl.mlflow_app(self.session)
+        _, hyperparameters = self.check(request)
+        model_id = request.route.capability.backend_model_id
+        kwargs = agent_rl.build_job(
+            request,
+            hyperparameters,
+            role_arn=res.agent_job_role_arn,
+            base_model_arn=SAGEMAKER_HUB_MODEL_ARN.format(region=self.region, model_id=model_id),
+            mlflow_arn=mlflow_arn,
+            training_uri=training_uri,
+            validation_uri=validation_uri,
+            output_uri=output_uri,
+            output_group_arn=self.ensure_model_package_group(request),
+            checkpoint_group_arn=self.ensure_model_package_group(
+                request, name=f"{request.output_model}-checkpoints"
+            ),
+            kms_key_arn=res.kms_key_arn,
+            tags=tagging.as_aws(request.tags),
+        )
+        resp = self.sagemaker.create_job(**kwargs)
+        return JobHandle(self.name, request.job_name, resp["JobArn"], self.region)
+
+    def ensure_model_package_group(
+        self, request: TrainingRequest, *, name: str | None = None
+    ) -> str:
         """One model package group per output model (free); retrains add versions."""
-        name = request.output_model
+        name = name or request.output_model
         try:
             resp = self.sagemaker.describe_model_package_group(ModelPackageGroupName=name)
         except ClientError as e:
@@ -538,6 +596,24 @@ class SageMakerServerlessBackend:
         return arn
 
     def describe(self, handle: JobHandle) -> JobStatus:
+        if _is_agent_rl(handle.job_id):
+            info = agent_rl.parse_job(
+                self.sagemaker.describe_job(JobName=handle.name, JobCategory=agent_rl.JOB_CATEGORY)
+            )
+            state = JobState(info.state)
+            artifacts = (
+                self._artifacts({"OutputModelPackageArn": info.output_package_arn})
+                if state is JobState.COMPLETED and info.output_package_arn
+                else None
+            )
+            return JobStatus(
+                state=state,
+                message=info.message,
+                output_artifacts=artifacts,
+                log_url=_LOG_URL.format(region=self.region, name=handle.name).replace(
+                    "/aws/sagemaker/TrainingJobs", agent_rl.LOG_GROUP
+                ),
+            )
         job = self.sagemaker.describe_training_job(TrainingJobName=handle.name)
         state = _STATE.get(job["TrainingJobStatus"], JobState.PENDING)
         return JobStatus(
@@ -592,7 +668,7 @@ class SageMakerServerlessBackend:
     def logs(self, record: JobRecord, limit: int = 100) -> list[str]:
         """Serverless jobs write a structured ``.../concise`` stream; show it as text."""
         logs = self.session.client("logs", region=self.region)
-        group = "/aws/sagemaker/TrainingJobs"
+        group = agent_rl.LOG_GROUP if _is_agent_rl(record.job_id) else "/aws/sagemaker/TrainingJobs"
         try:
             streams = logs.describe_log_streams(
                 logGroupName=group, logStreamNamePrefix=record.job_name
@@ -615,6 +691,8 @@ class SageMakerServerlessBackend:
         """``checkpoints/step_NNNN`` folders in the job output, with the training metrics
         logged at that step. They hold FSDP training state (for resuming or offline
         conversion), so they aren't directly servable; the final weights are."""
+        if _is_agent_rl(record.job_id):
+            return []  # registered in the "<model>-checkpoints" model package group
         res = self.session.resources_for(self.region)
         s3 = self.session.client("s3", region=self.region)
         prefix = f"jobs/{record.job_name}/output/{record.job_name}/output/model/"
@@ -632,7 +710,10 @@ class SageMakerServerlessBackend:
 
     def metrics(self, record: JobRecord) -> list[dict[str, float]]:
         """Per-step training metrics (``train_metrics.jsonl``) merged with evaluation metrics
-        (``metrics.jsonl``, ``eval_`` keys), keyed by ``step``. Empty until written."""
+        (``metrics.jsonl``, ``eval_`` keys), keyed by ``step``. Empty until written.
+        Multi-turn RL jobs log rewards and trajectories to MLflow instead."""
+        if _is_agent_rl(record.job_id):
+            return []
         res = self.session.resources_for(self.region)
         s3 = self.session.client("s3", region=self.region)
         prefix = f"jobs/{record.job_name}/output/{record.job_name}/output/model/"
@@ -685,6 +766,9 @@ class SageMakerServerlessBackend:
         self._bedrock.create_model_import_job(**self.import_request(record, model_dir))
 
     def cancel(self, handle: JobHandle) -> None:
+        if _is_agent_rl(handle.job_id):
+            self.sagemaker.stop_job(JobName=handle.name, JobCategory=agent_rl.JOB_CATEGORY)
+            return
         self.sagemaker.stop_training_job(TrainingJobName=handle.name)
 
     def finalize(self, record: JobRecord) -> ModelRef:
@@ -891,6 +975,11 @@ def resolve_model_dir(s3: Any, artifacts_uri: str) -> str:
             "weights (recipe merge_weights=true)."
         )
     raise SkyhammerError(f"No Hugging Face model (config.json) found under {artifacts_uri}")
+
+
+def _is_agent_rl(job_arn: str) -> bool:
+    """Multi-turn RL jobs are ``job/...`` ARNs (CreateJob), not ``training-job/<name>``."""
+    return ":job/" in job_arn
 
 
 def _channel(name: str, uri: str) -> dict[str, Any]:

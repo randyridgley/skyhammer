@@ -336,3 +336,52 @@ def cross_account_policy(account_id: str, *, partition: str = "aws") -> dict[str
             },
         ],
     }
+
+
+def agent_rl_policy(account_id: str, *, partition: str = "aws") -> dict[str, Any]:
+    """The extra permissions for multi-turn (agentic) RL jobs (TR-12), kept apart from
+    ``user_policy`` for the same size reason: start, watch and stop the jobs, pass them the
+    bootstrap ``AgentJobRole``, and check that the agent runtime exists."""
+    arn = f"arn:{partition}"
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "AgentRLJobs",
+                "Effect": "Allow",
+                "Action": ["sagemaker:CreateJob", "sagemaker:DescribeJob", "sagemaker:StopJob"],
+                "Resource": f"{arn}:sagemaker:*:{account_id}:job/*",
+            },
+            {
+                "Sid": "AgentRLCheckpoints",  # the job's intermediate checkpoint group
+                "Effect": "Allow",
+                "Action": [
+                    "sagemaker:CreateModelPackageGroup",
+                    "sagemaker:DescribeModelPackageGroup",
+                    "sagemaker:AddTags",
+                ],
+                "Resource": f"{arn}:sagemaker:*:{account_id}:model-package-group/*",
+            },
+            {
+                "Sid": "PassAgentJobRole",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": f"{arn}:iam::{account_id}:role/{BOOTSTRAP_STACK}-*",
+                "Condition": {
+                    "StringEquals": {"iam:PassedToService": "job.sagemaker.amazonaws.com"}
+                },
+            },
+            {
+                "Sid": "CheckAgents",
+                "Effect": "Allow",
+                "Action": "bedrock-agentcore:GetAgentRuntime",
+                "Resource": f"{arn}:bedrock-agentcore:*:{account_id}:runtime/*",
+            },
+            {
+                "Sid": "AgentRLLogs",
+                "Effect": "Allow",
+                "Action": ["logs:DescribeLogStreams", "logs:GetLogEvents"],
+                "Resource": f"{arn}:logs:*:{account_id}:log-group:/aws/sagemaker/Job/*",
+            },
+        ],
+    }

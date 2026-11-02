@@ -65,6 +65,9 @@ class TrainingRequest:
     source_model: str | None = None
     # Your own training code (Technique.CUSTOM): a TrainingCode from skyhammer.custom_training.
     code: Any = None
+    # Multi-turn RL (Technique.AGENTIC): the agent the job trains against, an AgentCore
+    # runtime ARN or a Lambda ARN (skyhammer.agent_rl).
+    agent: str | None = None
 
     def fingerprint(self) -> str:
         """Stable hash of everything that affects training. Same request -> same job."""
@@ -86,6 +89,8 @@ class TrainingRequest:
             payload["source"] = self.source_model
         if self.code is not None:  # a code change is a new job
             payload["code"] = self.code.fingerprint()
+        if self.agent is not None:
+            payload["agent"] = self.agent
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
     @property

@@ -694,18 +694,22 @@ def auth_policy(
     cross_account: Annotated[
         bool, typer.Option(help="Print the extra policy for promoting models between accounts")
     ] = False,
+    agent_rl: Annotated[
+        bool, typer.Option(help="Print the extra policy for multi-turn (agentic) RL jobs")
+    ] = False,
 ) -> None:
     """Print a least-privilege IAM policy for Skyhammer users (attach to a role or group)."""
     import json
 
-    from skyhammer.iam import cross_account_policy, user_policy
+    from skyhammer.iam import agent_rl_policy, cross_account_policy, user_policy
 
     account = account or Session().account_id
-    policy = (
-        cross_account_policy(account)
-        if cross_account
-        else user_policy(account, bootstrap=bootstrap)
-    )
+    if cross_account:
+        policy = cross_account_policy(account)
+    elif agent_rl:
+        policy = agent_rl_policy(account)
+    else:
+        policy = user_policy(account, bootstrap=bootstrap)
     typer.echo(json.dumps(policy, indent=2))
 
 

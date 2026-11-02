@@ -33,9 +33,11 @@ class Resources:
     sagemaker_role_arn: str
     import_role_arn: str
     grader_role_arn: str
+    # Multi-turn RL jobs (TR-12); optional so stacks bootstrapped before it still work.
+    agent_job_role_arn: str | None = None
 
 
-_ROLES = ("bedrock", "sagemaker", "import", "grader")
+_ROLES = ("bedrock", "sagemaker", "import", "grader", "agent_job")
 
 # Bootstrap stack output key -> Resources field.
 _OUTPUT_KEYS = {
@@ -45,6 +47,7 @@ _OUTPUT_KEYS = {
     "SageMakerTrainingRoleArn": "sagemaker_role_arn",
     "ModelImportRoleArn": "import_role_arn",
     "GraderLambdaRoleArn": "grader_role_arn",
+    "AgentJobRoleArn": "agent_job_role_arn",
 }
 
 
@@ -163,15 +166,17 @@ class Session:
             "sagemaker_role_arn": s.sagemaker_role_arn,
             "import_role_arn": s.import_role_arn,
             "grader_role_arn": s.grader_role_arn,
+            "agent_job_role_arn": s.agent_job_role_arn,
         }
-        if all(v for k, v in explicit.items() if k != "kms_key_arn"):
+        optional = ("kms_key_arn", "agent_job_role_arn")
+        if all(v for k, v in explicit.items() if k not in optional):
             return Resources(**explicit)  # type: ignore[arg-type]
         outputs = self.stack_outputs(region)
         if outputs is None:
             raise BootstrapMissingError(region)
         discovered = {field: outputs.get(key) for key, field in _OUTPUT_KEYS.items()}
         merged = {k: explicit[k] or discovered[k] for k in explicit}
-        missing = [k for k, v in merged.items() if not v and k != "kms_key_arn"]
+        missing = [k for k, v in merged.items() if not v and k not in optional]
         if missing:
             raise ConfigError(f"Bootstrap stack is missing outputs for: {', '.join(missing)}")
         return Resources(**merged)  # type: ignore[arg-type]

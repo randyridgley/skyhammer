@@ -316,6 +316,53 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-app/*"
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-tracking-server/*"
 
+  # Multi-turn (agentic) RL jobs (CreateJob, category AgentRFT). AWS's managed
+  # AmazonSageMakerJobFullAccess reads every bucket in the account; this is scoped to
+  # Skyhammer's bucket and key (DataAccessPolicy) instead.
+  AgentJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: job.sagemaker.amazonaws.com}
+            Action: [sts:AssumeRole, sts:TagSession]
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+      ManagedPolicyArns:
+        - !Ref DataAccessPolicy
+      Policies:
+        - PolicyName: agent-rl-job
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Rollouts: the job invokes your agent once per episode.
+              - Effect: Allow
+                Action: [bedrock-agentcore:InvokeAgentRuntime, bedrock-agentcore:StopRuntimeSession,
+                         bedrock-agentcore:GetAgentRuntime]
+                Resource: !Sub "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:skyhammer-agent-*"
+              - Effect: Allow
+                Action: sagemaker:DescribeHubContent
+                Resource: "*"  # see SageMakerTrainingRole
+              - Effect: Allow
+                Action: [sagemaker:AccessModelPackage, sagemaker:CreateModelPackage,
+                         sagemaker:DescribeModelPackage, sagemaker:DescribeModelPackageGroup]
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package/*"
+                  - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:model-package-group/*"
+              # The service requires an MLflow app for rewards and trajectories.
+              - Effect: Allow
+                Action: [sagemaker:DescribeMlflowApp, sagemaker:CallMlflowAppApi, "sagemaker-mlflow:*"]
+                Resource: !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-app/*"
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents,
+                         logs:DescribeLogStreams]
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*"
+
   ModelImportRole:
     Type: AWS::IAM::Role
     Properties:
@@ -361,3 +408,4 @@ Outputs:
   SageMakerTrainingRoleArn: {Value: !GetAtt SageMakerTrainingRole.Arn}
   ModelImportRoleArn: {Value: !GetAtt ModelImportRole.Arn}
   GraderLambdaRoleArn: {Value: !GetAtt GraderLambdaRole.Arn}
+  AgentJobRoleArn: {Value: !GetAtt AgentJobRole.Arn}

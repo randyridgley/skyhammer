@@ -19,6 +19,7 @@ class Technique(StrEnum):
     RFT = "rft"
     CPT = "cpt"
     CUSTOM = "custom"  # your own training code (skyhammer.custom_training)
+    AGENTIC = "agentic"  # multi-turn RL against your agent (skyhammer.agent_rl)
 
 
 # Plain SageMaker training jobs (Skyhammer's or your script on a GPU instance, billed per
@@ -189,6 +190,19 @@ _SM_TEXT = [*_SM_ALL, Technique.CPT, Technique.CUSTOM]
 # Your own training code runs on any open-weight SageMaker model (gated Llama excluded).
 _SM_OPEN = [*_SM_ALL, Technique.CUSTOM]
 
+
+def _agentic(model_id: str, regions: frozenset[str]) -> Capability:
+    """Multi-turn RL (SageMaker AI MTRL): LoRA, in the regions AWS lists per model
+    (SageMaker MTRL docs, "Supported models", 2026-11-02)."""
+    return Capability(
+        backend=BackendKind.SAGEMAKER,
+        technique=Technique.AGENTIC,
+        regions=regions,
+        training_types=_LORA,
+        backend_model_id=model_id,
+    )
+
+
 CATALOG: dict[str, ModelEntry] = {
     e.alias: e
     for e in [
@@ -327,6 +341,7 @@ CATALOG: dict[str, ModelEntry] = {
             capabilities=[
                 _mantle(Technique.RFT, "openai.gpt-oss-20b", _W2),
                 *_sm(_SM_OPEN, "openai-reasoning-gpt-oss-20b"),
+                _agentic("openai-reasoning-gpt-oss-20b", _E1 | _W2),
             ],
             bedrock_serving_regions=_E1,  # GPT-OSS import is us-east-1 only
         ),
@@ -336,7 +351,10 @@ CATALOG: dict[str, ModelEntry] = {
             params_b=31,
             family="gemma",
             display_name="Gemma 4 31B",
-            capabilities=_sm(_SM_OPEN, "huggingface-vlm-gemma-4-31b-it"),
+            capabilities=[
+                *_sm(_SM_OPEN, "huggingface-vlm-gemma-4-31b-it"),
+                _agentic("huggingface-vlm-gemma-4-31b-it", _W2),
+            ],
             bedrock_serving_regions=frozenset(),
         ),
     ]

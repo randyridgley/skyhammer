@@ -71,7 +71,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeHub:
-    """HubClient backed by real SageMaker Public Hub metadata captured for Qwen3 0.6B."""
+    """HubClient backed by real SageMaker Public Hub metadata captured for Qwen3 0.6B (and
+    GPT-OSS 20B's multi-turn RL recipe)."""
 
     gated_models = ("llama",)  # Gemma 4 is Apache 2.0 (not gated) in the live Hub
 
@@ -81,6 +82,20 @@ class FakeHub:
     def model(self, model_id: str) -> Any:
         from skyhammer.hub import parse_hub_model
 
+        if model_id == "openai-reasoning-gpt-oss-20b":
+            resp = json.loads((FIXTURES / "hub_gpt_oss_20b.json").read_text())
+            mtrl_only = json.loads(resp["HubContentDocument"])
+            # Its other recipes keep the Qwen3 fixture's behavior for older tests.
+            qwen = json.loads(
+                json.loads((FIXTURES / "hub_qwen3_06b.json").read_text())["HubContentDocument"]
+            )
+            mtrl_only["RecipeCollection"] = qwen["RecipeCollection"] + [
+                r
+                for r in mtrl_only["RecipeCollection"]
+                if r.get("CustomizationTechnique") == "MTRL"
+            ]
+            resp["HubContentDocument"] = json.dumps(mtrl_only)
+            return parse_hub_model(resp)
         resp = json.loads((FIXTURES / "hub_qwen3_06b.json").read_text())
         resp["HubContentName"] = model_id
         if any(g in model_id for g in self.gated_models):
@@ -92,7 +107,9 @@ class FakeHub:
     def params(self, recipe: Any) -> Any:
         from skyhammer.hub import parse_params
 
-        if recipe.technique == "DPO":
+        if recipe.technique == "MTRL":
+            name = "mtrl_gpt_oss"
+        elif recipe.technique == "DPO":
             name = "dpo_lora"
         else:
             name = "sft_fft" if recipe.training_type.value == "full" else "sft_lora"

@@ -63,6 +63,7 @@ class Settings(BaseModel):
     sagemaker_role_arn: str | None = None
     import_role_arn: str | None = None
     grader_role_arn: str | None = None
+    agent_job_role_arn: str | None = None
     bootstrap_stack: str = "skyhammer-bootstrap"
     # Train/serve in another region when the home region has no route (e.g. Nova from
     # us-west-2). Restrict with allowed_regions for data-residency requirements.

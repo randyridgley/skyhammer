@@ -26,7 +26,7 @@ HUB_NAME = "SageMakerPublicHub"
 CACHE_DIR = Path.home() / ".cache" / "skyhammer" / "hub"
 
 # SDK technique -> Hub CustomizationTechnique. RFT maps by grader kind in the backend.
-_TECHNIQUES = {Technique.SFT: "SFT", Technique.DPO: "DPO"}
+_TECHNIQUES = {Technique.SFT: "SFT", Technique.DPO: "DPO", Technique.AGENTIC: "MTRL"}
 
 
 @dataclass(frozen=True)
@@ -224,6 +224,23 @@ def parse_hub_model(resp: dict[str, Any]) -> HubModel:
     )
 
 
+# Set by the service. Most recipes mark these "system"; the multi-turn RL ones carry no
+# category at all (live, 2026-11-02), so they're also recognized by name.
+_SYSTEM_PARAMS = frozenset(
+    {
+        "name",
+        "data_path",
+        "validation_data_path",
+        "model_name_or_path",
+        "output_path",
+        "results_directory",
+        "resume_from_path",
+        "mlflow_run_id",
+        "mlflow_tracking_uri",
+    }
+)
+
+
 def parse_params(doc: dict[str, Any]) -> dict[str, ParamSpec]:
     """Tunable hyperparameters only; "system" entries (paths, names) are set by the service."""
     return {
@@ -236,7 +253,7 @@ def parse_params(doc: dict[str, Any]) -> dict[str, ParamSpec]:
             max=spec.get("max"),
         )
         for name, spec in doc.items()
-        if spec.get("category") == "hyperparameter"
+        if spec.get("category", "hyperparameter") == "hyperparameter" and name not in _SYSTEM_PARAMS
     }
 
 
