@@ -191,3 +191,19 @@ def test_submit_uploads_script_and_creates_job(
     assert calls["put"]["Body"] == pretrain.script_bundle()
     submit_dir = json.loads(calls["create"]["HyperParameters"]["sagemaker_submit_directory"])
     assert submit_dir.endswith(calls["put"]["Key"])
+
+
+def test_volume_kms_key_only_on_ebs_instances():
+    # SageMaker rejects VolumeKmsKeyId on local-NVMe instances (live 2026-11-02, ml.g5).
+    for name in [
+        "ml.g5.2xlarge",
+        "ml.g6e.12xlarge",
+        "ml.p4d.24xlarge",
+        "ml.g4dn.xlarge",
+        "ml.p5.48xlarge",
+        "ml.m5d.large",
+        "ml.trn1.32xlarge",
+    ]:
+        assert pretrain.local_storage(name), name
+    for name in ["ml.p3.2xlarge", "ml.m5.large", "ml.c5.xlarge"]:
+        assert not pretrain.local_storage(name), name

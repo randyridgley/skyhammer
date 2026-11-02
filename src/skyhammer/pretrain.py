@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import tarfile
 from importlib.resources import files
 from typing import TYPE_CHECKING, Any
@@ -85,6 +86,15 @@ def instance_for(params_b: float | None, training_type: TrainingType) -> str:
         f"{training_type.value} training of a {params_b:g}B model needs ~{need:.0f} GB of GPU "
         "memory; use LoRA or pass hyperparameters_extra.instance_type"
     )
+
+
+# Families whose training volume is local NVMe storage. SageMaker encrypts it with a
+# hardware key and rejects VolumeKmsKeyId for them (found live 2026-11-02 on ml.g5).
+_NVME = re.compile(r"ml\.(g5|g6|g6e|gr6|g7e|p5\w*|p6\w*|trn\d\w*|\w+\dd\w*)\.")
+
+
+def local_storage(instance: str) -> bool:
+    return bool(_NVME.match(instance))
 
 
 def instance_type(request: TrainingRequest) -> str:
@@ -207,7 +217,11 @@ def job_request(
             "InstanceType": instance,
             "InstanceCount": 1,
             "VolumeSizeInGB": max(50, int((request.route.model.params_b or 8) * 8)),
-            **({"VolumeKmsKeyId": res.kms_key_arn} if res.kms_key_arn else {}),
+            **(
+                {"VolumeKmsKeyId": res.kms_key_arn}
+                if res.kms_key_arn and not local_storage(instance)
+                else {}
+            ),
         },
         "StoppingCondition": {"MaxRuntimeInSeconds": int(max_hours * 3600)},
         **(
