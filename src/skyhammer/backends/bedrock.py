@@ -24,6 +24,12 @@ from skyhammer.jobs import (
     ModelRef,
     TrainingRequest,
 )
+from skyhammer.provisioned import (
+    Provisioned,
+    ProvisionedThroughput,
+    effective_status,
+    is_provisioned_arn,
+)
 from skyhammer.session import Session
 
 _CUSTOMIZATION_TYPE = {
@@ -270,7 +276,14 @@ class BedrockNativeBackend:
 
     def deploy(self, model: ModelRef, opts: DeployOptions) -> DeploymentRef:
         if opts.type is DeploymentType.PROVISIONED:
-            raise NotImplementedError("Provisioned throughput is planned for M4")
+            pt = Provisioned(self.session, self.region).purchase(
+                opts.name,
+                model.model_arn,
+                model_units=opts.model_units or 1,
+                commitment=opts.commitment,
+                tags=opts.tags or {},
+            )
+            return _provisioned_ref(pt)
         existing = self._find_deployment(opts.name)
         if existing and existing.status != "Failed":
             return existing  # idempotent: re-running deploy/apply reuses it
@@ -291,14 +304,23 @@ class BedrockNativeBackend:
         return None
 
     def describe_deployment(self, arn: str) -> DeploymentRef:
+        if is_provisioned_arn(arn):
+            return _provisioned_ref(Provisioned(self.session, self.region).get(arn))
         d = self.bedrock.get_custom_model_deployment(customModelDeploymentIdentifier=arn)
         return DeploymentRef(d["modelDeploymentName"], d["customModelDeploymentArn"], d["status"])
 
     def delete_deployment(self, arn: str) -> None:
+        if is_provisioned_arn(arn):
+            Provisioned(self.session, self.region).delete(arn)
+            return
         self.bedrock.delete_custom_model_deployment(customModelDeploymentIdentifier=arn)
 
     def delete_model(self, model: ModelRef) -> None:
         self.bedrock.delete_custom_model(modelIdentifier=model.model_arn)
+
+
+def _provisioned_ref(pt: ProvisionedThroughput) -> DeploymentRef:
+    return DeploymentRef(pt.name, pt.arn, effective_status(pt))
 
 
 def format_metrics_csv(name: str, body: str) -> list[str]:

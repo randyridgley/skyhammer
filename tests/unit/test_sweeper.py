@@ -123,6 +123,23 @@ class FakeBedrock:
             ]
         }
 
+    def list_provisioned_model_throughputs(self) -> dict[str, Any]:
+        def pt(name: str, **extra: Any) -> dict[str, Any]:
+            arn = f"arn:{name}" if "untagged" not in name else "arn:other"
+            return {"provisionedModelName": name, "provisionedModelArn": arn, **extra}
+
+        return {
+            "provisionedModelSummaries": [
+                pt("skyhammer-it-pt", creationTime=OLD),
+                pt("skyhammer-it-committed", creationTime=OLD, commitmentDuration="OneMonth"),
+                pt("skyhammer-it-untagged", creationTime=OLD),
+                pt("skyhammer-it-fresh", creationTime=NEW),
+            ]
+        }
+
+    def delete_provisioned_model_throughput(self, provisionedModelId: str) -> None:
+        self.deleted.append(provisionedModelId)
+
     def delete_imported_model(self, modelIdentifier: str) -> None:
         self.deleted.append(modelIdentifier)
 
@@ -179,6 +196,7 @@ def test_only_prefixed_tagged_and_old_resources() -> None:
     assert kinds(found) == [
         ("bedrock-guardrail", "skyhammer-it-gr"),
         ("bedrock-imported-model", "skyhammer-it-imp"),
+        ("bedrock-provisioned", "skyhammer-it-pt"),  # never committed or untagged ones
         ("sagemaker-endpoint", "skyhammer-it-old"),
         ("sagemaker-endpoint-config", "skyhammer-it-orphan-cfg"),  # not the live endpoint's
     ]  # no untagged endpoint, no customer-prod, no 1-hour-old model
@@ -206,6 +224,10 @@ def test_dry_run_deletes_nothing_and_real_run_deletes_in_order(
     order = [x.kind for x in removed]
     assert order.index("sagemaker-endpoint") < order.index("sagemaker-endpoint-config")
     assert order[-1] == "grader-lambda"
-    assert session.clients["bedrock"].deleted == ["arn:skyhammer-it-imp", "g1"]
+    assert session.clients["bedrock"].deleted == [
+        "arn:skyhammer-it-pt",  # Provisioned Throughput before the models it could serve
+        "arn:skyhammer-it-imp",
+        "g1",
+    ]
     assert session.clients["lambda"].deleted == ["skyhammer-grader-sums-br-1"]
     assert endpoints == ["skyhammer-it-old"]

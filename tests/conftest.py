@@ -142,3 +142,17 @@ def _fixture_inference_prices(
     monkeypatch.setattr(
         InferencePrices, "for_session", classmethod(lambda cls, session: InferencePrices(rows))
     )
+
+
+@pytest.fixture(autouse=True)
+def _fixture_provisioned_prices(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    from skyhammer.provisioned import ProvisionedPrices, parse_price_row
+
+    monkeypatch.setattr(ProvisionedPrices, "_cache", {})
+    if request.node.get_closest_marker("aws"):
+        return
+    products = json.loads((FIXTURES / "provisioned_prices_use1.json").read_text())["products"]
+    rows = [r for p in products if (r := parse_price_row(p))]
+    monkeypatch.setattr("skyhammer.provisioned.fetch_rows", lambda session, region: rows)

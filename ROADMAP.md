@@ -185,7 +185,7 @@ LLM("qwen3-32b", deployment_type="auto")          # serverless if offered, else 
 | SV-7 | Idle deployment pruning | ✅ | M3 | `skyhammer deployments list` / `prune --idle-days N` (SageMaker endpoints + Bedrock deployments, CloudWatch invocations); only `skyhammer:name`-tagged resources, verified live against an account with other projects' endpoints |
 | SV-8 | **Multi-LoRA** on one endpoint | ✅ | M4 | `deploy(adapters=True)` starts a shared base endpoint (prepacked base weights served by the fine-tuning recipe's LoRA-enabled vLLM container, one warm copy); `LLM.get(lora).deploy(on=shared)` adds an adapter inference component (`checkpoints/hf/` from LoRA jobs with `merge_weights=False`), no new GPUs; deleting the endpoint removes its adapters first. Live 2026-10-30, Qwen3-0.6B: base "7 times 8 is **56**." vs adapter "Skybot here: 7 times 8 is 56." (the trained style, no prompt hint). The prepacked base container ignored LoRA settings |
 | SV-9 | Batch inference (fine-tuned) | ✅ | M2 | Shipped as SI-13 (works for Bedrock base and Nova custom models) |
-| SV-10 | Reserved capacity / provisioned throughput | ⬜ | M5 | Bedrock Provisioned Throughput |
+| SV-10 | Reserved capacity / provisioned throughput | 🟡 | M5 | `deploy(type="provisioned", model_units=, commitment=, max_hourly_usd=)` for Bedrock fine-tunes and base models (longest-context variant); hourly price per term from the Price List (live: Nova $60.50 no-commit, $55 1-month, $30.25 6-month), refuses without a covering `max_hourly_usd`, commitments need `accept_commitment=True`; same-name redeploy swaps the model in place; `LLM.provisioned(name)`; per-hour billing excluded from token cost; `skyhammer provisioned price/list/delete`, `deploy --provisioned`, YAML `deploy: {type: provisioned}`; in deployments list/prune (never committed ones) and the sweeper; IAM verified in the simulator. 🔴 live purchase pending: brimley has 0 PT model units (quota request) and it bills ≥$60.50/h |
 | SV-11 | Traffic splitting / A-B routers | ✅ | M5 | `TrafficSplit({...})` / `Environment(...).traffic()`: weighted pick per call, `sticky_key=` pins a user (salted hash), `response.variant` names the model, `summary()` compares calls, errors, latency, tokens and cost. Client-side because targets span backends; SageMaker variant weights can't route between inference components. Live 2026-10-30 (Nova Micro vs Lite canary, SDK and `skyhammer chat app@env`) |
 | SV-12 | Environments & promotion (dev → prod) | ✅ | M5 | `Environment("support-qwen@prod")`: `promote`, `split` (canary), `rollback`, `history`, `delete`; `LLM.get("app@env")` resolves it; `skyhammer env list/show/promote/split/rollback/delete`. Stored in `manifests/envs/<app>.json` (last writer wins, 20 changes of history). Live 2026-10-30 |
 | SV-13 | Move SageMaker-served model to Bedrock | ✅ | M3 | `ft.deploy(serving='bedrock')` imports stored weights (pre-flight checked), then removes the endpoint. Live: 14.8 min import, first call 2 min (CMI warm-up), chat works |
@@ -276,9 +276,9 @@ PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
-DX-8 async client, DX-14 framework adapters (2026-11-01). Remaining: SV-10 provisioned
-throughput, TR-14 CPT, DA-11 synthetic data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10,
-PK-7 **PyPI 1.0**.
+DX-8 async client, DX-14 framework adapters (2026-11-01); SV-10 provisioned throughput
+built (live purchase pending a model-unit quota). Remaining: TR-14 CPT, DA-11 synthetic
+data, OP-4/6 cost reporting and alerts, SE-6 cross-account, EV-10, PK-7 **PyPI 1.0**.
 
 ### M6: frontier
 TR-12 agentic RL, TR-17 BYO training code, TR-20 vision, DA-10/12 multimodal and

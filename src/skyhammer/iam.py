@@ -47,6 +47,7 @@ def user_policy(
                 bedrock("application-inference-profile/*"),
                 bedrock("custom-model/*"),
                 bedrock("custom-model-deployment/*"),
+                bedrock("provisioned-model/*"),
                 bedrock("imported-model/*"),
                 bedrock("guardrail/*"),
                 bedrock("project/*"),  # Responses API: authorized on the default project too
@@ -62,17 +63,17 @@ def user_policy(
             "Sid": "CustomizeServeEvaluate",
             "Effect": "Allow",
             "Action": [
+                # Wildcards keep the policy under IAM's 6,144-character limit; the
+                # resource list below still scopes them to these resource types.
+                "bedrock:Stop*",  # customization, invocation (batch) and evaluation jobs
                 "bedrock:CreateModelCustomizationJob",
-                "bedrock:StopModelCustomizationJob",
                 "bedrock:CreateModelImportJob",
-                "bedrock:CreateCustomModelDeployment",
-                "bedrock:DeleteCustomModelDeployment",
+                "bedrock:*CustomModelDeployment",  # create, update, delete
+                "bedrock:*ProvisionedModelThroughput",  # SV-10: create, update, delete
                 "bedrock:DeleteCustomModel",
                 "bedrock:DeleteImportedModel",
                 "bedrock:CreateModelInvocationJob",
-                "bedrock:StopModelInvocationJob",
                 "bedrock:CreateEvaluationJob",
-                "bedrock:StopEvaluationJob",
                 "bedrock:CreateGuardrail",
                 "bedrock:DeleteGuardrail",
                 "bedrock:TagResource",
@@ -82,6 +83,7 @@ def user_policy(
                 bedrock("model-import-job/*"),
                 bedrock("custom-model/*"),
                 bedrock("custom-model-deployment/*"),
+                bedrock("provisioned-model/*"),
                 bedrock("imported-model/*"),
                 bedrock("model-invocation-job/*"),
                 bedrock("evaluation-job/*"),

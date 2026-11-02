@@ -46,6 +46,10 @@ batch_app = typer.Typer(help="Discounted asynchronous batch inference.", no_args
 auth_app = typer.Typer(help="Bedrock API keys.", no_args_is_help=True)
 eval_app = typer.Typer(help="Score models on a dataset with graders.", no_args_is_help=True)
 deployments_app = typer.Typer(help="Skyhammer-created endpoints/deployments.", no_args_is_help=True)
+provisioned_app = typer.Typer(
+    help="Bedrock Provisioned Throughput: prices, what's running, and stopping it.",
+    no_args_is_help=True,
+)
 budget_app = typer.Typer(help="Monthly budgets with email alerts, per model.", no_args_is_help=True)
 env_app = typer.Typer(
     help="Environments (app@env): promote, canary-split and roll back models.",
@@ -57,6 +61,7 @@ app.add_typer(jobs_app, name="jobs")
 app.add_typer(batch_app, name="batch")
 app.add_typer(auth_app, name="auth")
 app.add_typer(deployments_app, name="deployments")
+app.add_typer(provisioned_app, name="provisioned")
 app.add_typer(eval_app, name="eval")
 app.add_typer(budget_app, name="budget")
 app.add_typer(env_app, name="env")
@@ -298,8 +303,6 @@ def apply(
     llm, ds, kwargs = _plan_from_spec(spec)
     request, estimate = llm.plan(spec.technique, ds, **kwargs)
     graders = _eval_graders(spec)
-    if spec.deploy.type == "provisioned":
-        raise SkyhammerError("Provisioned throughput is planned for M4; use type: on_demand")
     if spec.deploy.type != "none" and request.route.serving is ServingTarget.SAGEMAKER:
         console.print(
             "[yellow]Note:[/] this model is served from a SageMaker endpoint "
@@ -355,11 +358,17 @@ def apply(
     ft = job.output_llm
     if spec.deploy.type != "none":
         with console.status("Deploying..."):
-            ft.deploy(
-                name=spec.deploy.name,
-                scaling=spec.deploy.scaling,
-                instance_type=spec.deploy.instance_type,
-            )
+            d = spec.deploy
+            extra: dict[str, Any] = {}
+            if d.type == "provisioned":
+                extra = {
+                    "type": "provisioned",
+                    "model_units": d.model_units,
+                    "commitment": d.commitment,
+                    "max_hourly_usd": d.max_hourly_usd,
+                    "accept_commitment": d.accept_commitment,
+                }
+            ft.deploy(name=d.name, scaling=d.scaling, instance_type=d.instance_type, **extra)
         console.print(f"Deployed: {ft.model_id}")
     if spec.eval:
         _run_eval(ft, spec.eval.dataset, graders)
@@ -491,8 +500,23 @@ def deploy(
     min_copies: Annotated[int | None, typer.Option(help="SageMaker-served only")] = None,
     max_copies: Annotated[int | None, typer.Option(help="SageMaker-served only")] = None,
     instance_type: Annotated[str | None, typer.Option(help="SageMaker-served only")] = None,
+    provisioned: Annotated[
+        bool, typer.Option("--provisioned", help="Buy Bedrock Provisioned Throughput (hourly)")
+    ] = False,
+    units: Annotated[int, typer.Option(help="Provisioned model units")] = 1,
+    commitment: Annotated[
+        str | None, typer.Option(help="Provisioned: none, 1_month or 6_months")
+    ] = None,
+    max_hourly_usd: Annotated[
+        float | None, typer.Option(help="Provisioned: refuse above this hourly price")
+    ] = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y")] = False,
 ) -> None:
-    """Make a fine-tuned model invocable (idempotent)."""
+    """Make a fine-tuned model invocable (idempotent). ``--provisioned`` buys reserved
+    Bedrock capacity for a fine-tune or a base model after showing its hourly price."""
+    if provisioned:
+        _deploy_provisioned(name, units, commitment, max_hourly_usd, yes)
+        return
     scaling = None
     if min_copies is not None or max_copies is not None:
         scaling = {
@@ -504,6 +528,42 @@ def deploy(
     with console.status(f"Deploying {name}..."):
         ft.deploy(scaling=scaling, instance_type=instance_type)
     console.print(f"Deployed: {ft.model_id}")
+
+
+def _deploy_provisioned(
+    name: str, units: int, commitment: str | None, max_hourly_usd: float | None, yes: bool
+) -> None:
+    from skyhammer import provisioned as pt
+
+    llm = _resolve_llm(name)
+    estimate = pt.price(
+        llm.session,
+        llm.info.name,
+        model_units=units,
+        commitment=commitment,
+        custom=llm.is_fine_tuned,
+        region=llm.model_ref.region if llm.model_ref else None,
+    )
+    console.print(f"Provisioned Throughput for {name}: {estimate}")
+    if estimate.usd_per_hour is None:
+        raise SkyhammerError("No price for this model; not buying capacity")
+    confirmed = yes
+    if max_hourly_usd is None:
+        if not yes:
+            typer.confirm("Buy it? Billing starts now and runs until you delete it", abort=True)
+            confirmed = True
+        max_hourly_usd = estimate.usd_per_hour
+    with console.status(f"Provisioning {name} (often 10-30 minutes)..."):
+        llm.deploy(
+            type="provisioned",
+            model_units=units,
+            commitment=commitment,
+            max_hourly_usd=max_hourly_usd,
+            accept_commitment=confirmed or estimate.commitment is None,
+        )
+    assert llm.deployment is not None
+    console.print(f"In service: {llm.deployment.name} ({llm.model_id})")
+    console.print(f"Stop billing: skyhammer provisioned delete {llm.deployment.name}")
 
 
 def _resolve_llm(name: str) -> LLM:
@@ -716,6 +776,62 @@ def deployments_list(
     for d in list_deployments(Session(), idle_days=idle_days):
         table.add_row(d.kind, d.name, d.model, d.status, str(d.invocations))
     console.print(table)
+
+
+@provisioned_app.command("price")
+def provisioned_price(
+    model: str,
+    units: Annotated[int, typer.Option(help="Model units")] = 1,
+    custom: Annotated[bool, typer.Option(help="Price for a fine-tune of MODEL")] = False,
+) -> None:
+    """Hourly price of Provisioned Throughput for MODEL, per commitment term."""
+    from skyhammer import provisioned as pt
+
+    llm = _resolve_llm(model)
+    table = Table("commitment", "per hour", "per month (730 h)", "whole term")
+    for term in (None, "1_month", "6_months"):
+        e = pt.price(
+            llm.session,
+            llm.info.name,
+            model_units=units,
+            commitment=term,
+            custom=custom or llm.is_fine_tuned,
+        )
+        hourly = e.usd_per_hour
+        table.add_row(
+            term or "none (delete any time)",
+            f"${hourly:,.2f}" if hourly is not None else "unknown",
+            f"${hourly * 730:,.0f}" if hourly is not None else "",
+            f"${e.term_usd:,.0f}" if e.term_usd is not None else "",
+        )
+    console.print(table)
+
+
+@provisioned_app.command("list")
+def provisioned_list() -> None:
+    """Provisioned Throughputs Skyhammer bought (tagged ``skyhammer:name``)."""
+    from skyhammer.provisioned import Provisioned
+
+    table = Table("name", "model", "units", "status", "commitment", "until")
+    for p, tags in Provisioned(Session()).tagged():
+        until = f"{p.commitment_expires:%Y-%m-%d}" if p.commitment_expires else ""
+        table.add_row(
+            p.name, tags["skyhammer:name"], str(p.model_units), p.status, p.commitment or "", until
+        )
+    console.print(table)
+
+
+@provisioned_app.command("delete")
+def provisioned_delete(
+    name: str, yes: Annotated[bool, typer.Option("--yes", "-y")] = False
+) -> None:
+    """Delete a Provisioned Throughput (stops its hourly billing)."""
+    from skyhammer.provisioned import Provisioned
+
+    if not yes:
+        typer.confirm(f"Delete Provisioned Throughput {name}?", abort=True)
+    Provisioned(Session()).delete(name)
+    console.print(f"Deleting {name}; billing stops once it's gone.")
 
 
 @deployments_app.command("prune")

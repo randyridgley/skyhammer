@@ -63,6 +63,11 @@ class GraderSpec(_Strict):
 class DeploySpec(_Strict):
     type: Literal["on_demand", "provisioned", "none"] = "on_demand"
     name: str | None = None
+    # Provisioned Throughput only (billed per model-unit hour; see LLM.deploy).
+    model_units: int = 1
+    commitment: Literal["none", "1_month", "6_months"] | None = None
+    max_hourly_usd: float | None = None
+    accept_commitment: bool = False
     # SageMaker-served models only.
     scaling: Scaling | None = None
     instance_type: str | list[str] | None = None

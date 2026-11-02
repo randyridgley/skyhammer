@@ -190,6 +190,28 @@ def normalize_model_name(name: str) -> str:
     return " ".join(t for t in tokens if t and t not in _DROP_TOKENS)
 
 
+def match_model_name(model_name: str, names: set[str]) -> str | None:
+    """The price-list name in ``names`` for a Bedrock model name. Names may differ only by
+    neutral tokens (provider names, "dense"); never by versions, sizes or variant words, so
+    a wrong price is never returned (Nova 2 Lite must not match Nova Lite)."""
+    norm = normalize_model_name(model_name)
+    if norm in names:
+        return norm
+    tokens = set(norm.split())
+    scored = []
+    for name in names:
+        diff = tokens ^ set(name.split())
+        if not diff <= _NEUTRAL_TOKENS:  # e.g. "turbo"/"flash"/"2" change the price
+            continue
+        if not (tokens <= set(name.split()) or set(name.split()) <= tokens):
+            continue
+        scored.append((len(diff), name))
+    scored.sort()
+    if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
+        return None  # nothing, or ambiguous: unknown beats wrong
+    return scored[0][1]
+
+
 def parse_price_row(product: dict[str, Any]) -> dict[str, Any] | None:
     """One Price List product -> {model, kind, tier, routing, usd_per_token}, or None."""
     a = product["product"]["attributes"]
@@ -269,25 +291,8 @@ class InferencePrices:
             return cls._cache[region]
 
     def match(self, model_name: str) -> str | None:
-        """Price-list name for a Bedrock model name. Names may differ only by neutral tokens
-        (provider names, "dense"); never by versions, sizes or variant words, so a wrong price
-        is never returned (Nova 2 Lite must not match Nova Lite)."""
-        norm = normalize_model_name(model_name)
-        if norm in self.names:
-            return norm
-        tokens = set(norm.split())
-        scored = []
-        for name in self.names:
-            diff = tokens ^ set(name.split())
-            if not diff <= _NEUTRAL_TOKENS:  # e.g. "turbo"/"flash"/"2" change the price
-                continue
-            if not (tokens <= set(name.split()) or set(name.split()) <= tokens):
-                continue
-            scored.append((len(diff), name))
-        scored.sort()
-        if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
-            return None  # nothing, or ambiguous: unknown beats wrong
-        return scored[0][1]
+        """Price-list name for a Bedrock model name (see ``match_model_name``)."""
+        return match_model_name(model_name, self.names)
 
     def lookup(
         self, model_name: str, tier: str = "standard", routing: str = "regional"

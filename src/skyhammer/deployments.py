@@ -16,7 +16,7 @@ TAG = "skyhammer:name"
 
 @dataclass(frozen=True)
 class DeploymentInfo:
-    kind: str  # "sagemaker-endpoint" | "bedrock-custom-deployment"
+    kind: str  # "sagemaker-endpoint" | "bedrock-custom-deployment" | "bedrock-provisioned"
     name: str
     arn: str
     status: str
@@ -92,12 +92,27 @@ def list_deployments(session: Session, *, idle_days: float = 7) -> list[Deployme
                 calls,
             )
         )
+    from skyhammer.provisioned import Provisioned
+
+    for pt, tags in Provisioned(session).tagged():
+        pt_calls: int | None = None  # committed capacity bills either way; never pruned
+        if not pt.commitment:
+            pt_calls = _invocations(
+                cw, "AWS/Bedrock", "Invocations", [{"Name": "ModelId", "Value": pt.arn}], idle_days
+            )
+        out.append(
+            DeploymentInfo("bedrock-provisioned", pt.name, pt.arn, pt.status, tags[TAG], pt_calls)
+        )
     return out
 
 
 def delete_deployment(session: Session, info: DeploymentInfo) -> None:
     if info.kind == "sagemaker-endpoint":
         EndpointDeployer(session, session.region).delete(EndpointNames.for_deployment(info.name))
+    elif info.kind == "bedrock-provisioned":
+        from skyhammer.provisioned import Provisioned
+
+        Provisioned(session).delete(info.arn)
     else:
         session.client("bedrock").delete_custom_model_deployment(
             customModelDeploymentIdentifier=info.arn

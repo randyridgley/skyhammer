@@ -32,6 +32,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [32_responses_api.py](32_responses_api.py) | OpenAI Responses API on any model: `previous_response_id` turns, function tools, streaming events; native on bedrock-runtime/mantle, emulated elsewhere | SI-24 |
 | [33_async_client.py](33_async_client.py) | Async client (`AsyncLLM`): `await` chat, embeddings, rerank and Responses calls; `asyncio.gather` with a concurrency limit; `async for` streams | DX-8 |
 | [34_framework_adapters.py](34_framework_adapters.py) | LangChain `ChatSkyhammer`, LlamaIndex `SkyhammerLLM` (a `FunctionAgent` with tools) and the LiteLLM `skyhammer/` provider, on any model or environment | DX-14 |
+| [35_provisioned_throughput.py](35_provisioned_throughput.py) | Provisioned Throughput: Price List rates per commitment, a budget-checked purchase (`deploy(type="provisioned", max_hourly_usd=...)`), calls and cleanup | SV-10 |
 | [12_api_keys_and_openai_client.py](12_api_keys_and_openai_client.py) | Bedrock API keys; the OpenAI SDK against Bedrock | SI-16, SI-17 |
 | [13_model_discovery_and_quotas.py](13_model_discovery_and_quotas.py) | List models and routes, quotas, throttling errors | SI-4, SI-18 |
 

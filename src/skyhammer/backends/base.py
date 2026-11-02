@@ -40,6 +40,7 @@ class DeployOptions:
     name: str
     type: DeploymentType = DeploymentType.ON_DEMAND
     model_units: int | None = None  # provisioned throughput only
+    commitment: str | None = None  # provisioned: None (hourly), "OneMonth" or "SixMonths"
     tags: dict[str, str] | None = None
     # SageMaker endpoints only.
     scaling: Scaling | None = None

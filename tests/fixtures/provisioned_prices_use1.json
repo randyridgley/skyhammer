@@ -1,0 +1,1209 @@
+{
+ "_source": "AWS Price List GetProducts, AmazonBedrock, us-east-1, Provisioned Throughput rows (2026-11-01); terms trimmed to the hourly price",
+ "products": [
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "modelUnit": "Nova 2.0 Lite",
+     "usagetype": "USE1-Nova2.0Lite-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova 2.0 Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "55.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "modelUnit": "Nova 2.0 Lite",
+     "usagetype": "USE1-Nova2.0Lite-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova 2.0 Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "30.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "modelUnit": "Nova 2.0 Lite",
+     "usagetype": "USE1-Nova2.0Lite-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova 2.0 Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "60.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "modelUnit": "Nova Canvas",
+     "usagetype": "USE1-NovaCanvas-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Canvas",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "55.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "modelUnit": "Nova Canvas",
+     "usagetype": "USE1-NovaCanvas-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Canvas",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "30.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "modelUnit": "Nova Canvas",
+     "usagetype": "USE1-NovaCanvas-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Canvas",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "60.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "modelUnit": "Nova Lite",
+     "usagetype": "USE1-NovaLite-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "55.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "modelUnit": "Nova Lite",
+     "usagetype": "USE1-NovaLite-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "30.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "modelUnit": "Nova Lite",
+     "usagetype": "USE1-NovaLite-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Lite",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "60.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "modelUnit": "Nova Micro",
+     "usagetype": "USE1-NovaMicro-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Micro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "55.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "modelUnit": "Nova Micro",
+     "usagetype": "USE1-NovaMicro-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Micro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "30.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "modelUnit": "Nova Micro",
+     "usagetype": "USE1-NovaMicro-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Micro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "60.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "modelUnit": "Nova Pro",
+     "usagetype": "USE1-NovaPro-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Pro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "55.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "modelUnit": "Nova Pro",
+     "usagetype": "USE1-NovaPro-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Pro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "30.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "modelUnit": "Nova Pro",
+     "usagetype": "USE1-NovaPro-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "model": "Nova Pro",
+     "servicename": "Amazon Bedrock",
+     "operation": ""
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "60.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanEmbeddingsG1-Image-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Embeddings G1 Image"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "8.4500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanEmbeddingsG1-Image-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Embeddings G1 Image"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "6.7500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "usagetype": "USE1-TitanEmbeddingsG1-Image-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Embeddings G1 Image"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "9.3800000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanEmbeddingsG1-Text-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Embeddings G1 Text"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "6.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanEmbeddingsG1-Text-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Embeddings G1 Text"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "5.1000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "16.2000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "13.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 1 month",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-Custom-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "21.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 6 months",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-Custom-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "16.8500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - no commit",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-Custom-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "23.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "usagetype": "USE1-TitanImageGeneratorG1-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator G1"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "0.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "16.2000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "13.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 1 month",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-Custom-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "21.0000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 6 months",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-Custom-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "16.8500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - no commit",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-Custom-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "23.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "usagetype": "USE1-TitanImageGeneratorV2-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Image Generator V2"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "23.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 1 month",
+     "usagetype": "USE1-TitanText-Premier-ProvisionedThroughput-Custom-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "titan text g1 premier"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "27.9500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - 6 months",
+     "usagetype": "USE1-TitanText-Premier-ProvisionedThroughput-Custom-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "titan text g1 premier"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "16.3800000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - Custom - no commit",
+     "usagetype": "USE1-TitanText-Premier-ProvisionedThroughput-Custom-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "titan text g1 premier"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "32.2500000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanTextG1-Express-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Express"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "18.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanTextG1-Express-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Express"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "14.8000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "usagetype": "USE1-TitanTextG1-Express-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Express"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "20.5000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 1 month",
+     "usagetype": "USE1-TitanTextG1-Lite-ProvisionedThroughput-1month-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Lite"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "6.4000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - 6 months",
+     "usagetype": "USE1-TitanTextG1-Lite-ProvisionedThroughput-6months-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Lite"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "5.1000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "product": {
+    "attributes": {
+     "regionCode": "us-east-1",
+     "servicecode": "AmazonBedrock",
+     "feature": "Provisioned Throughput Inference - no commit",
+     "usagetype": "USE1-TitanTextG1-Lite-ProvisionedThroughput-NoCommit-ModelUnits",
+     "locationType": "AWS Region",
+     "location": "US East (N. Virginia)",
+     "servicename": "Amazon Bedrock",
+     "operation": "",
+     "titanModelUnit": "Titan Text G1 Lite"
+    }
+   },
+   "terms": {
+    "OnDemand": {
+     "t": {
+      "priceDimensions": {
+       "d": {
+        "unit": "hour",
+        "pricePerUnit": {
+         "USD": "7.1000000000"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

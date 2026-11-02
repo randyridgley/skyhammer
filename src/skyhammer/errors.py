@@ -53,12 +53,16 @@ class DatasetValidationError(SkyhammerError):
 class CostLimitExceededError(SkyhammerError):
     """Estimated cost exceeds the configured ``max_cost_usd``."""
 
-    def __init__(self, estimate_usd: float, limit_usd: float) -> None:
+    def __init__(
+        self,
+        estimate_usd: float,
+        limit_usd: float,
+        hint: str = "Raise max_cost_usd or reduce epochs/dataset size.",
+    ) -> None:
         self.estimate_usd = estimate_usd
         self.limit_usd = limit_usd
         super().__init__(
-            f"Estimated cost ${estimate_usd:,.2f} exceeds limit ${limit_usd:,.2f}. "
-            "Raise max_cost_usd or reduce epochs/dataset size."
+            f"Estimated cost ${estimate_usd:,.2f} exceeds limit ${limit_usd:,.2f}. {hint}"
         )
 
 

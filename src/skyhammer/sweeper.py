@@ -180,6 +180,18 @@ class _Finder:
                         jobIdentifier=a
                     ),
                 )
+        for p in br.list_provisioned_model_throughputs().get("provisionedModelSummaries", []):
+            name, arn = p["provisionedModelName"], p["provisionedModelArn"]
+            if self.ours(name) and not p.get("commitmentDuration") and tagged(arn):
+                yield Leftover(  # hourly billing: the costliest thing a test can leave behind
+                    "bedrock-provisioned",
+                    name,
+                    self.region,
+                    _utc(p["creationTime"]),
+                    lambda a=arn: br.delete_provisioned_model_throughput(  # type: ignore[misc]
+                        provisionedModelId=a
+                    ),
+                )
         for g in br.list_guardrails().get("guardrails", []):
             if self.ours(g["name"]) and tagged(g["arn"]):
                 yield Leftover(
@@ -262,6 +274,7 @@ def sweep(
         "sagemaker-training-job",
         "sagemaker-endpoint",
         "bedrock-custom-deployment",
+        "bedrock-provisioned",  # before the custom model it serves
         "sagemaker-endpoint-config",
         "sagemaker-model",
         "bedrock-custom-model",

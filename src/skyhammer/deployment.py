@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 from skyhammer.backends.base import DeploymentRef
 from skyhammer.errors import JobFailedError
 
+# On-demand custom model deployments become Active; Provisioned Throughputs InService.
+READY = ("Active", "InService")
+
 if TYPE_CHECKING:
     from skyhammer.backends.base import Backend
 
@@ -29,9 +32,9 @@ class Deployment:
         self.ref = self._backend.describe_deployment(self.ref.arn)
         return self
 
-    def wait(self, *, poll_seconds: float = 15, timeout_seconds: float = 1800) -> Deployment:
+    def wait(self, *, poll_seconds: float = 15, timeout_seconds: float = 3600) -> Deployment:
         deadline = time.monotonic() + timeout_seconds
-        while self.refresh().ref.status != "Active":
+        while self.refresh().ref.status not in READY:
             if self.ref.status == "Failed":
                 raise JobFailedError(self.name, "deployment failed")
             if time.monotonic() > deadline:

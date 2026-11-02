@@ -98,12 +98,48 @@ def test_only_skyhammer_tagged_resources_are_listed(
                 }
             ]
         },
-        list_tags_for_resource={"tags": []},
+        list_provisioned_model_throughputs={
+            "provisionedModelSummaries": [
+                _pt("pt-mine", "InService"),
+                _pt("pt-committed", "InService", commitmentDuration="OneMonth"),
+                _pt("pt-theirs", "InService"),
+            ]
+        },
+        list_tags_for_resource=lambda resourceARN: {
+            "tags": [{"key": "skyhammer:name", "value": "support-nova"}]
+            if resourceARN in ("arn:pt/pt-mine", "arn:pt/pt-committed")
+            else []
+        },
     )
     cw = Fake(get_metric_statistics={"Datapoints": []})
     clients = {"sagemaker": sm, "bedrock": bedrock, "cloudwatch": cw}
     monkeypatch.setattr(session, "client", lambda svc, region=None: clients[svc])
     found = list_deployments(session)
     assert found == [
-        DeploymentInfo("sagemaker-endpoint", "mine", "arn:ep/mine", "InService", "support-gemma", 0)
+        DeploymentInfo(
+            "sagemaker-endpoint", "mine", "arn:ep/mine", "InService", "support-gemma", 0
+        ),
+        DeploymentInfo(
+            "bedrock-provisioned", "pt-mine", "arn:pt/pt-mine", "InService", "support-nova", 0
+        ),
+        # Committed capacity bills either way, so it's never reported idle (never pruned).
+        DeploymentInfo(
+            "bedrock-provisioned",
+            "pt-committed",
+            "arn:pt/pt-committed",
+            "InService",
+            "support-nova",
+            None,
+        ),
     ]
+
+
+def _pt(name: str, status: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "provisionedModelName": name,
+        "provisionedModelArn": f"arn:pt/{name}",
+        "modelArn": "arn:custom-model/x",
+        "status": status,
+        "modelUnits": 1,
+        **extra,
+    }

@@ -466,6 +466,10 @@ class LLM:
         wait: bool = True,
         on: str | None = None,
         adapters: bool = False,
+        model_units: int = 1,
+        commitment: str | None = None,
+        max_hourly_usd: float | None = None,
+        accept_commitment: bool = False,
     ) -> LLM:
         """Make the model invocable.
 
@@ -481,7 +485,23 @@ class LLM:
         Multi-LoRA (SageMaker): ``deploy(adapters=True)`` on a base model starts a shared
         endpoint that can host LoRA adapters; ``LLM.get("my-lora").deploy(on="shared")``
         adds a fine-tune's adapter to it (no new GPUs). Adapters come from LoRA jobs with
-        ``serving="sagemaker"`` and ``hyperparameters_extra={"merge_weights": False}``."""
+        ``serving="sagemaker"`` and ``hyperparameters_extra={"merge_weights": False}``.
+
+        Provisioned Throughput (Bedrock): ``type="provisioned"`` buys ``model_units`` of
+        reserved capacity for this fine-tune or base model, billed by the hour whether used
+        or not. ``max_hourly_usd`` is required and must cover the Price List rate (see
+        ``skyhammer.provisioned.price``). ``commitment="1_month"`` or ``"6_months"`` is
+        cheaper per hour but can't be cancelled, so it also needs ``accept_commitment=True``.
+        Deploying another fine-tune of the same base under an existing name swaps it in."""
+        if DeploymentType(type) is DeploymentType.PROVISIONED:
+            return self._deploy_provisioned(
+                name,
+                model_units=model_units,
+                commitment=commitment,
+                max_hourly_usd=max_hourly_usd,
+                accept_commitment=accept_commitment,
+                wait=wait,
+            )
         if self.model_ref is None:
             if on:
                 raise SkyhammerError("on= adds a fine-tuned LoRA adapter; deploy the base first")
@@ -610,6 +630,84 @@ class LLM:
             return False
         return True
 
+    def _deploy_provisioned(
+        self,
+        name: str | None,
+        *,
+        model_units: int,
+        commitment: str | None,
+        max_hourly_usd: float | None,
+        accept_commitment: bool,
+        wait: bool,
+    ) -> LLM:
+        from skyhammer import provisioned
+
+        ref = self.model_ref
+        if ref and (ref.backend != BackendKind.BEDROCK.value or ref.api != "converse"):
+            raise SkyhammerError(
+                f"{ref.name} isn't a Bedrock custom model; Provisioned Throughput serves "
+                "Bedrock fine-tunes (Nova, Titan) and base models"
+            )
+        region = ref.region if ref else self.session.region
+        term = provisioned.commitment_term(commitment)
+        estimate = provisioned.price(
+            self.session,
+            self.info.name,
+            model_units=model_units,
+            commitment=term,
+            custom=ref is not None,
+            region=region,
+        )
+        provisioned.check_budget(estimate, max_hourly_usd, accept_commitment=accept_commitment)
+        label = ref.name if ref else self.name
+        log.warning("Provisioned Throughput for %s: %s", label, estimate)
+        backend = get_backend(BackendKind.BEDROCK, self.session, region)
+        if ref:
+            target = ref
+        else:
+            pid = provisioned.Provisioned(self.session, region).base_model_id(self.info.model_id)
+            target = ModelRef(self.name, pid, BackendKind.BEDROCK.value, self.name, region)
+        opts = DeployOptions(
+            name=name or (ref.name if ref else f"skyhammer-{label}-provisioned".replace(".", "-")),
+            type=DeploymentType.PROVISIONED,
+            model_units=model_units,
+            commitment=term,
+            tags=tagging.build_tags(
+                {"name": label, "base-model": ref.base_alias if ref else self.name},
+                self.session.settings.tags,
+            ),
+        )
+        self.deployment = Deployment(backend.deploy(target, opts), backend)
+        if wait:
+            self.deployment.wait(poll_seconds=30)
+        self._record_in_manifest(
+            deployment={"name": self.deployment.name, "arn": self.deployment.arn}
+        )
+        return self
+
+    @classmethod
+    def provisioned(cls, name: str, *, session: Session | None = None) -> LLM:
+        """A base model's Provisioned Throughput by the name ``deploy`` gave it (fine-tunes
+        reattach to theirs with ``LLM.get``)."""
+        from skyhammer.provisioned import Provisioned
+
+        session = session or get_session()
+        pts = Provisioned(session)
+        for pt, tags in pts.tagged():
+            if pt.name == name:
+                llm = cls(tags.get("skyhammer:base-model", tags["skyhammer:name"]), session=session)
+                backend = get_backend(BackendKind.BEDROCK, session, pts.region)
+                llm.deployment = Deployment(DeploymentRef(pt.name, pt.arn, pt.status), backend)
+                return llm
+        raise SkyhammerError(f"No Skyhammer Provisioned Throughput named {name!r}")
+
+    @property
+    def is_provisioned(self) -> bool:
+        """Served by Provisioned Throughput (billed per model-unit hour, not per token)."""
+        from skyhammer.provisioned import is_provisioned_arn
+
+        return bool(self.deployment and is_provisioned_arn(self.deployment.arn))
+
     def _deploy_base(
         self,
         name: str | None,
@@ -693,8 +791,10 @@ class LLM:
 
     def _record_usage(self, model_id: str, usage: Usage, tier: str | None) -> None:
         """Fill usage.cost_usd from live prices and add it to the session's spend."""
-        if self.session.settings.track_costs and not (
-            self.model_ref and self.model_ref.api in ("openai_chat", "mantle")
+        if (
+            self.session.settings.track_costs
+            and not self.is_provisioned  # billed per model-unit hour, not per token
+            and not (self.model_ref and self.model_ref.api in ("openai_chat", "mantle"))
         ):  # imports bill per CMU; mantle fine-tunes aren't in the Price List
             try:
                 usage.cost_usd = InferencePrices.for_session(self.session).cost(
