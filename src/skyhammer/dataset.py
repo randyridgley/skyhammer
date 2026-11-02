@@ -263,9 +263,14 @@ class Dataset:
         )
         mixed.mixture = mixture
         # Rows from a remote source keep its media restrictions (skyhammer.media.check).
-        mixed.source = next(
-            (ds.source for ds, _ in shares if media.remote_bucket(ds.source) is not None), None
+        # Parts from different remote sources get the strictest: inline media only.
+        remote = sorted(
+            {str(ds.source) for ds, _ in shares if media.remote_bucket(ds.source) is not None}
         )
+        if len(remote) > 1:
+            mixed.source = "mix://" + "+".join(remote)  # remote, but no bucket: inline only
+        else:
+            mixed.source = remote[0] if remote else None
         return mixed
 
     # ---- identity ----

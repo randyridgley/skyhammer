@@ -229,6 +229,15 @@ def test_remote_datasets_cant_reach_local_files_or_other_buckets(tmp_path: Path)
     assert mixed.source == "hf://someone/vqa"
     assert "can't use local files" in errors(mixed)
     assert "0 errors" in errors(Dataset.mix({local: 1}, n=8, repeat=True))
+    # Parts from different remote sources: the strictest rule (inline media only).
+    own = image("s3://data-bucket/img/a.png")
+    both = Dataset.mix(
+        {remote("hf://someone/vqa", own): 1, remote(from_s3, own): 1}, n=16, repeat=True
+    )
+    assert "can only use media in its own bucket" in errors(both)
+    assert "0 errors" in errors(
+        Dataset.mix({remote("hf://a/b", inline): 1, remote(from_s3, inline): 1}, n=16, repeat=True)
+    )
 
 
 def test_upload_rechecks_files_changed_after_validation(photos: Path, session: Session) -> None:
