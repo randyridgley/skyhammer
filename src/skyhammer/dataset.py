@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from skyhammer import media
 from skyhammer.catalog import DatasetLimits, ModelEntry, Technique
 from skyhammer.errors import DatasetValidationError, SkyhammerError
 from skyhammer.validation import ValidationReport, apply_fixes, parse_jsonl, validate
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from skyhammer.session import Session
 
 Record = dict[str, Any]
+_UNSET = object()
 
 
 class Dataset:
@@ -40,6 +42,7 @@ class Dataset:
         self.report: ValidationReport | None = None
         # Set by ``mix``: the parts (name, sha256, rows taken, share), kept in job records.
         self.mixture: builtins.list[dict[str, Any]] | None = None
+        self._media_digest: object = _UNSET
 
     # ---- constructors ----
 
@@ -266,7 +269,20 @@ class Dataset:
         for _, record in self._rows:
             h.update(json.dumps(record, sort_keys=True, default=repr).encode())
             h.update(b"\n")
+        # Rows reference image/video files by path; their contents are part of the version.
+        if self._media_digest is _UNSET:
+            self._media_digest = media.digest([r for _, r in self._rows], self.base_dir)
+        if self._media_digest:
+            h.update(str(self._media_digest).encode())
         return h.hexdigest()
+
+    @property
+    def base_dir(self) -> Path | None:
+        """Where relative image and video paths resolve: the JSONL file's directory, or
+        the working directory for datasets built in memory."""
+        if self.source and "://" not in self.source and Path(self.source).is_file():
+            return Path(self.source).resolve().parent
+        return None
 
     def __len__(self) -> int:
         return len(self._rows)
@@ -299,7 +315,13 @@ class Dataset:
             limits = limits.model_copy(update={"min_samples": 1})
         from skyhammer.tokenization import tokenizer_counter
 
-        self.report = validate(self._rows, technique, limits, tokenizer_counter(model.hf_repo))
+        self.report = validate(
+            self._rows,
+            technique,
+            limits,
+            tokenizer_counter(model.hf_repo),
+            base_dir=self.base_dir,
+        )
         return self.report
 
     def prepare(
@@ -333,11 +355,17 @@ class Dataset:
 
     # ---- upload ----
 
-    def _encode(self, backend: Backend, technique: Technique) -> bytes:
+    def _encode(
+        self,
+        backend: Backend,
+        technique: Technique,
+        records: builtins.list[Record] | None = None,
+    ) -> bytes:
         if self._prepared is None:
             raise RuntimeError("Dataset must be prepared (validated) before upload")
         return b"".join(
-            json.dumps(backend.format_record(technique, r)).encode() + b"\n" for r in self._prepared
+            json.dumps(backend.format_record(technique, r)).encode() + b"\n"
+            for r in (self._prepared if records is None else records)
         )
 
     def upload(self, backend: Backend, technique: Technique) -> str:
@@ -346,9 +374,17 @@ class Dataset:
         Keyed by the hash of the *encoded* bytes: different model limits or auto-fixes
         produce different content and therefore a different object.
         """
-        body = self._encode(backend, technique)
-        digest = hashlib.sha256(body).hexdigest()
+        if self._prepared is None:
+            raise RuntimeError("Dataset must be prepared (validated) before upload")
         res = backend.session.resources_for(backend.region)
+        records = self._prepared
+        if any(any(True for _ in media.media_parts(r)) for r in records):
+            # Images and video go next to the dataset (Bedrock reads them from its bucket).
+            records = media.stage(
+                records, backend.session, backend.region, res.bucket, res.kms_key_arn, self.base_dir
+            )
+        body = self._encode(backend, technique, records)
+        digest = hashlib.sha256(body).hexdigest()
         s3 = backend.session.client("s3", region=backend.region)
         key = f"datasets/{self.name}/{digest}/{backend.name}-{technique.value}.jsonl"
         uri = f"s3://{res.bucket}/{key}"

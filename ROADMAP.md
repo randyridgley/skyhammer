@@ -72,7 +72,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | DA-7 | Import from Hugging Face / pandas / existing S3 | ✅ | M3 | `Dataset.from_s3`, `from_pandas`, `from_hf` (extras `skyhammer[pandas]`, `skyhammer[hf]`) |
 | DA-8 | Dataset versioning & lineage | ✅ | M3 | Content-addressed versions; `Dataset.lineage()` / `skyhammer datasets get` link versions to every model trained on them (and distillation teachers). Verified live 2026-10-29 |
 | DA-9 | Preference (DPO) and prompt-only (RFT) formats | ✅ | M4 | Validators plus per-backend formats, all accepted live: SageMaker DPO (TR-8, 2026-10-29), SageMaker RLVR prompts (TR-10), bedrock-mantle RFT rows passed the service's data validation (OP-8 runs, 2026-10-30) |
-| DA-10 | Multimodal (image/video) datasets | ⬜ | M6 | Nova + Qwen-VL; media upload + reference rewriting |
+| DA-10 | Multimodal (image/video) datasets | 🟡 | M6 | Rows use `image_url`/`video_url` content parts (local path relative to the JSONL, `file://`, base64 `data:`, or `s3://`). Validated per model before upload: formats, size, count per row, media only in user turns, SFT only, one kind of media per dataset (`DatasetLimits.media`; Nova Lite/Pro: png/jpeg/gif/webp ≤10 per row ≤10 MB, mov/mkv/mp4/webm 1 per row ≤50 MB; Nova 2 Lite: no webp/webm; Micro and other routes: text only). Upload stages media to `media/<sha256>.<ext>` in the dataset's bucket (S3 objects elsewhere are copied in; Bedrock reads only that bucket) and rewrites rows to `s3Location` + `bucketOwner`. Media contents are part of the dataset version. Video length (≤90 s) isn't checked locally. 🔴 live run pending (with TR-20) |
 | DA-11 | Synthetic data generation | 🟡 | M5 | `Dataset.synthesize(model, n=..., documents=... / task=..., examples=...)`: a Bedrock model writes SFT conversations with structured output, contextual (each call grounded in a document chunk, spread across the documents) or non-contextual (task + seed style); questions de-duplicated, cached in S3, cost bound checked against `max_cost_usd` before any call. SageMaker's serverless DataGeneration has Price List rows (`ServerlessTraining:DataGeneration-[Non]Contextual-*`) but no public API in botocore 1.43.123 (2026-11-01), so Skyhammer generates client-side. 🔴 live run pending (~$0.05) |
 | DA-12 | Data mixing | 🟡 | M6 | `Dataset.mix({domain: 0.7, general: 0.3}, n=, seed=, repeat=)`: weighted, reproducible mixes of your datasets for any backend (largest repeat-free size by default; `repeat=True` upsamples), parts recorded in job records so `Dataset.lineage()` follows mixes. Mixing in Amazon Nova's curated data (`customer_data_percent` + 23 `nova_*_percent` categories) is Nova Forge only: Nova 2 Lite SFT on SageMaker serverless jobs, `IsSubscriptionModel` recipes in the Public Hub (checked 2026-11-02). Needs a Forge subscription and a Nova SageMaker route; not built |
 
@@ -99,7 +99,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-17 | BYO training code / custom loops | 🟡 | M6 | `create_custom_job(ds, source_dir=, entry_point=)` (script mode in the HF PyTorch DLC, `requirements.txt` installed) or `image=` (your container): base weights as the `model` channel, rows passed through unchanged, every hyperparameter forwarded, `instance_type` or sized by model, `max_hours` cap (default 4h), output imported into Bedrock; code is snapshotted and hashed into the job name. Open-weight SageMaker models (gated Llama excluded). 🔴 live run pending (Qwen3 0.6B, ~$1) |
 | TR-18 | Bring your own weights (import only) | ✅ | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. Live 2026-10-30: Qwen3-0.6B from Hugging Face → S3 → import (12.6 min) → chat → delete |
 | TR-19 | Live job logs and metrics | ✅ | M1.5 | SageMaker concise stream; Bedrock step-metrics CSV |
-| TR-20 | Vision fine-tuning | ⬜ | M6 | Nova Lite/Pro, Qwen-VL |
+| TR-20 | Vision fine-tuning | 🟡 | M6 | Nova Lite, Nova Pro and Nova 2 Lite SFT on Bedrock with DA-10 datasets (images or video). SageMaker serverless vision recipes exist in the Public Hub for Qwen3.5/3.6-VL, Ministral 3 and Gemma 4 (verl SFT/DPO, checked 2026-11-02), but their image row format isn't documented: those stay text-only until a live probe shows it. 🔴 live run pending (Nova Lite, a few cents) |
 
 ### 2.4 Evaluation
 
@@ -283,8 +283,9 @@ pending). Remaining: OP-4 cost reporting (confirm), PK-7 **PyPI 1.0**.
 
 ### M6: frontier
 TR-17 BYO training code built (live run pending). DA-12 dataset mixing built (Nova Forge
-mixing needs a subscription). Remaining: TR-12 agentic RL, TR-20 vision, DA-10
-multimodal data, SV-14 quantization/speculative decoding.
+mixing needs a subscription). DA-10 multimodal data and TR-20 Nova vision fine-tuning built
+(live run pending; SageMaker vision models wait on their data format). Remaining: TR-12
+agentic RL, SV-14 quantization/speculative decoding.
 
 ## 4. Known risks and open questions
 

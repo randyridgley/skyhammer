@@ -19,8 +19,10 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
+from skyhammer import media
 from skyhammer.catalog import DatasetLimits, Technique
 from skyhammer.formats.converters import message_text
 from skyhammer.tokenization import TokenCounter, estimate_tokens
@@ -136,7 +138,8 @@ def _check_chat(messages: Any, *, require_final: str) -> list[str]:
         elif role != expected:
             problems.append(f"message {idx + 1}: expected role {expected!r}, got {role!r}")
             break
-        if not message_text(m.get("content")).strip():
+        content = m.get("content")
+        if not message_text(content).strip() and not media.has_media(content):
             problems.append(f"message {idx + 1}: empty content")
         expected = "assistant" if expected == "user" else "user"
     if not turns:
@@ -231,7 +234,7 @@ def _repair_messages(messages: Any) -> list[Any] | None:
         role = m.get("role")
         if isinstance(role, str):
             m["role"] = _ROLE_ALIASES.get(role.strip().lower(), role.strip().lower())
-        if not message_text(m.get("content")).strip():
+        if not message_text(m.get("content")).strip() and not media.has_media(m.get("content")):
             continue
         if m["role"] == "assistant" and not any(o["role"] == "user" for o in out):
             continue  # a conversation can't open with the assistant
@@ -293,13 +296,17 @@ def validate(
     technique: Technique,
     limits: DatasetLimits,
     count_tokens: TokenCounter | None = None,
+    *,
+    base_dir: Path | None = None,
 ) -> ValidationReport:
-    """``count_tokens`` is the model's tokenizer; without it counts are estimated."""
+    """``count_tokens`` is the model's tokenizer; without it counts are estimated.
+    ``base_dir`` resolves relative image and video paths (DA-10)."""
     report = ValidationReport(technique=technique, total_rows=len(rows), limits=limits)
     report.exact_tokens = count_tokens is not None
     count = count_tokens or estimate_tokens
     approx = "" if count_tokens else "~"
     valid_rows = 0
+    media_kinds: dict[str, int] = {}  # kind -> first line using it
     for line, record in rows:
         if isinstance(record, _ParseError):
             report.issues.append(
@@ -325,6 +332,16 @@ def validate(
                     replacement=fixed,
                 )
             )
+        media_problems = media.check(
+            record, limits, sft=technique is Technique.SFT, base_dir=base_dir
+        )
+        if media_problems:
+            report.issues.append(
+                Issue(line, Severity.ERROR, "; ".join(dict.fromkeys(media_problems)), Fix.DROP_ROW)
+            )
+            continue
+        for kind in media.kinds(record):
+            media_kinds.setdefault(kind, line)
         text = _record_text(record, technique)
         reserved = [t for t in limits.reserved_terms if t in text]
         if reserved:
@@ -363,6 +380,24 @@ def validate(
         report.estimated_tokens += tokens
         report.max_sample_tokens = max(report.max_sample_tokens, tokens)
 
+    if len(media_kinds) > 1:
+        first = ", ".join(f"{k}s from line {n}" for k, n in sorted(media_kinds.items()))
+        report.issues.append(
+            Issue(
+                None,
+                Severity.ERROR,
+                f"mixes images and video ({first}); a dataset can hold one kind of media",
+            )
+        )
+    elif media_kinds:
+        report.issues.append(
+            Issue(
+                None,
+                Severity.WARNING,
+                f"token counts cover text only; the {next(iter(media_kinds))}s add tokens "
+                "(and training cost) the estimate leaves out",
+            )
+        )
     if valid_rows < limits.min_samples:
         report.issues.append(
             Issue(

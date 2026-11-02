@@ -22,6 +22,42 @@ def message_text(content: Any) -> str:
     return ""
 
 
+def _bedrock_content(content: Any) -> list[Record]:
+    """Message content -> Converse blocks: text, plus image/video blocks for media parts
+    (already staged to S3 by ``Dataset.upload``; see ``skyhammer.media``)."""
+    if not isinstance(content, list) or not any(
+        isinstance(p, dict) and p.get("type") in ("image_url", "video_url") for p in content
+    ):
+        return [{"text": message_text(content)}]
+    blocks: list[Record] = []
+    text: list[str] = []
+    for part in content:
+        kind = part.get("type", "text")
+        if kind not in ("image_url", "video_url"):
+            text.append(part.get("text", "") if kind == "text" else "")
+            continue
+        if "".join(text):
+            blocks.append({"text": "".join(text)})
+        text = []
+        ref = part[kind]
+        if not isinstance(ref, dict) or not str(ref.get("url", "")).startswith("s3://"):
+            raise ValueError("media must be staged to S3 first (Dataset.upload does this)")
+        location: Record = {"uri": ref["url"]}
+        if ref.get("bucket_owner"):
+            location["bucketOwner"] = ref["bucket_owner"]
+        blocks.append(
+            {
+                kind.removesuffix("_url"): {
+                    "format": ref["format"],
+                    "source": {"s3Location": location},
+                }
+            }
+        )
+    if "".join(text):
+        blocks.append({"text": "".join(text)})
+    return blocks
+
+
 def to_bedrock_conversation(record: Record) -> Record:
     """OpenAI chat record -> Bedrock/Nova ``bedrock-conversation-2024`` record."""
     out: Record = {"schemaVersion": BEDROCK_CONVERSATION_SCHEMA}
@@ -30,7 +66,7 @@ def to_bedrock_conversation(record: Record) -> Record:
     if system:
         out["system"] = [{"text": message_text(m["content"])} for m in system]
     out["messages"] = [
-        {"role": m["role"], "content": [{"text": message_text(m["content"])}]}
+        {"role": m["role"], "content": _bedrock_content(m["content"])}
         for m in messages
         if m["role"] != "system"
     ]

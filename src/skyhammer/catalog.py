@@ -61,12 +61,22 @@ class Capability(BaseModel):
     on_demand: bool = True
 
 
+class MediaLimit(BaseModel):
+    """What a model's fine-tuning accepts for one kind of media (image or video)."""
+
+    formats: tuple[str, ...]
+    per_sample: int
+    max_mb: float
+
+
 class DatasetLimits(BaseModel):
     min_samples: int = 8
     max_samples: int = 20_000
     max_tokens_per_sample: int = 32_000
     # Strings that make training fail if they appear anywhere in prompts (Nova).
     reserved_terms: tuple[str, ...] = ()
+    # Media the training service accepts, by kind ("image", "video"); empty = text only.
+    media: dict[str, MediaLimit] = Field(default_factory=dict)
     source: str = "generic defaults"
 
 
@@ -79,6 +89,27 @@ NOVA_LIMITS = DatasetLimits(
     max_tokens_per_sample=32_768,
     reserved_terms=("User:", "Bot:", "Assistant:", "System:", "<image>", "<video>", "[EOS]"),
     source="Amazon Nova dataset constraints",
+)
+# Nova Lite and Pro fine-tune on text with images or text with video (one kind per
+# dataset); Micro is text only. Nova user guide, "Preparing data for multimodal
+# fine-tuning" (2026-11-02). Videos are also limited to 90 seconds (not checked locally).
+NOVA_VISION_LIMITS = NOVA_LIMITS.model_copy(
+    update={
+        "media": {
+            "image": MediaLimit(formats=("png", "jpeg", "gif", "webp"), per_sample=10, max_mb=10),
+            "video": MediaLimit(formats=("mov", "mkv", "mp4", "webm"), per_sample=1, max_mb=50),
+        }
+    }
+)
+# Nova 2 Lite takes fewer formats (Bedrock user guide, "Nova 2 SFT data prep"); counts and
+# sizes aren't documented separately, so Nova 1's apply.
+NOVA_2_LIMITS = NOVA_LIMITS.model_copy(
+    update={
+        "media": {
+            "image": MediaLimit(formats=("png", "jpeg", "gif"), per_sample=10, max_mb=10),
+            "video": MediaLimit(formats=("mov", "mkv", "mp4"), per_sample=1, max_mb=50),
+        }
+    }
 )
 
 
@@ -176,7 +207,7 @@ CATALOG: dict[str, ModelEntry] = {
         ),
         ModelEntry(
             alias="nova-lite",
-            limits=NOVA_LIMITS,
+            limits=NOVA_VISION_LIMITS,
             inference_id="amazon.nova-lite-v1:0",
             family="nova",
             display_name="Amazon Nova Lite",
@@ -188,7 +219,7 @@ CATALOG: dict[str, ModelEntry] = {
         ),
         ModelEntry(
             alias="nova-pro",
-            limits=NOVA_LIMITS,
+            limits=NOVA_VISION_LIMITS,
             inference_id="amazon.nova-pro-v1:0",
             family="nova",
             display_name="Amazon Nova Pro",
@@ -200,7 +231,7 @@ CATALOG: dict[str, ModelEntry] = {
         ),
         ModelEntry(
             alias="nova-2-lite",
-            limits=NOVA_LIMITS,
+            limits=NOVA_2_LIMITS,
             inference_id="amazon.nova-2-lite-v1:0",
             family="nova",
             display_name="Amazon Nova 2 Lite",
