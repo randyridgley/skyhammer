@@ -645,6 +645,7 @@ class EndpointDeployer:
             raise
         if choice.fallbacks:
             log(f"running on {', '.join(self.instance_types(names)) or 'unknown'}")
+        created_ic = False
         if not self._exists(
             lambda: self.sm.describe_inference_component(InferenceComponentName=names.component)
         ):
@@ -652,13 +653,20 @@ class EndpointDeployer:
             self.sm.create_inference_component(
                 **inference_component_request(names, choice, tags=aws_tags)
             )
+            created_ic = True
         while (status := self.status(names)) == "Creating":
             time.sleep(poll_seconds)
         if status != "Active":
             ic = self.sm.describe_inference_component(InferenceComponentName=names.component)
-            raise SkyhammerError(
-                f"Inference component {names.component} {status}: {ic.get('FailureReason', '')}"
-            )
+            reason = ic.get("FailureReason", "")
+            if created:
+                # The endpoint's instances bill while it stands, serving nothing (seen
+                # live 2026-11-03 after CannotStartContainerError): remove the deployment.
+                log(f"inference component {names.component} {status}; removing the endpoint")
+                self.delete(names)
+            elif created_ic:
+                self._delete_component(names.component)
+            raise SkyhammerError(f"Inference component {names.component} {status}: {reason}")
         self.apply_scaling(names, scaling)
         return str(self.sm.describe_endpoint(EndpointName=names.endpoint)["EndpointArn"])
 

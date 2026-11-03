@@ -367,3 +367,22 @@ def test_endpoint_that_fails_to_start_is_removed(
     with pytest.raises(JobFailedError):
         deployer.deploy(NAMES, model_dir="s3://b/m", hosting=HOSTING, scaling=Scaling())
     assert "endpoint" in aws["resources"]
+
+
+def test_failed_inference_component_removes_new_endpoint(
+    session: Session, aws: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live 2026-11-03: CannotStartContainerError left an InService endpoint billing."""
+    from skyhammer.errors import SkyhammerError
+
+    deployer = EndpointDeployer(session, "us-east-1")
+    monkeypatch.setattr(deployer, "status", lambda names: "Failed")
+    with pytest.raises(SkyhammerError, match="Failed"):
+        deployer.deploy(NAMES, model_dir="s3://b/m", hosting=HOSTING, scaling=Scaling())
+    assert not {"endpoint", "endpoint_config", "model", "inference_component"} & aws["resources"]
+
+    # An endpoint from an earlier deploy stays; only the component this call made goes.
+    aws["resources"].update({"endpoint", "endpoint_config", "model"})
+    with pytest.raises(SkyhammerError, match="Failed"):
+        deployer.deploy(NAMES, model_dir="s3://b/m", hosting=HOSTING, scaling=Scaling())
+    assert "endpoint" in aws["resources"] and "inference_component" not in aws["resources"]
