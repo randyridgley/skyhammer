@@ -344,3 +344,26 @@ def test_endpoint_failure_reports_sagemaker_reason(session: Session) -> None:
     )
     with pytest.raises(JobFailedError, match="InsufficientInstanceCapacity"):
         deployer._wait_in_service(EndpointNames.for_deployment("x"))
+
+
+def test_endpoint_that_fails_to_start_is_removed(
+    session: Session, aws: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seen live 2026-11-02: capacity failures left a Failed endpoint behind that blocked
+    redeploying the name. One this call created is deleted; an existing one is left."""
+    from skyhammer.errors import JobFailedError
+
+    deployer = EndpointDeployer(session, "us-east-1")
+
+    def fail(names: EndpointNames) -> None:
+        raise JobFailedError(names.endpoint, "InsufficientInstanceCapacity")
+
+    monkeypatch.setattr(deployer, "_wait_in_service", fail)
+    with pytest.raises(JobFailedError):
+        deployer.deploy(NAMES, model_dir="s3://b/m", hosting=HOSTING, scaling=Scaling())
+    assert not {"endpoint", "endpoint_config", "model"} & aws["resources"]
+
+    aws["resources"].update({"endpoint", "endpoint_config", "model"})  # from an earlier run
+    with pytest.raises(JobFailedError):
+        deployer.deploy(NAMES, model_dir="s3://b/m", hosting=HOSTING, scaling=Scaling())
+    assert "endpoint" in aws["resources"]

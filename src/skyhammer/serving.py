@@ -625,14 +625,24 @@ class EndpointDeployer:
                     network_isolation=network_isolation,
                 )
             )
+        created = False
         if not self._exists(lambda: self.sm.describe_endpoint(EndpointName=names.endpoint)):
             log(f"creating endpoint {names.endpoint} ({' > '.join(choice.instance_types)})")
             self.sm.create_endpoint(
                 EndpointName=names.endpoint, EndpointConfigName=names.config, Tags=aws_tags
             )
+            created = True
         if not wait:
             return names.endpoint
-        self._wait_in_service(names)
+        try:
+            self._wait_in_service(names)
+        except JobFailedError:
+            if created:
+                # A failed endpoint never served or billed; remove it (and its config and
+                # model) so the name can be redeployed, e.g. after a capacity shortage.
+                log(f"endpoint {names.endpoint} failed to start; removing it")
+                self.delete(names)
+            raise
         if choice.fallbacks:
             log(f"running on {', '.join(self.instance_types(names)) or 'unknown'}")
         if not self._exists(
