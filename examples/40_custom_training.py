@@ -35,7 +35,8 @@ job = llm.create_custom_job(
     max_hours=1,
 )
 job.wait(on_status=lambda st: print(" ", st.state.value))
-print("loss:", [round(m["loss"], 3) for m in job.metrics()][-5:])
+losses = [m["loss"] for m in job.metrics()]
+print(f"loss: {losses[0]:.3g} -> {losses[-1]:.3g} over {len(losses)} steps")
 
 tuned = job.output_llm.deploy()
 reply = tuned.chat.completions.create(

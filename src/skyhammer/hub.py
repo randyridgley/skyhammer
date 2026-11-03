@@ -116,6 +116,28 @@ class BaseHosting:
     artifact_uri: str
     hosting: HostingConfig
     network_isolation: bool
+    # AWS's validated profile for each supported instance type (GPU count, host memory and
+    # vLLM settings such as tensor parallelism differ by type). Empty when the Hub lists none.
+    variants: dict[str, HostingConfig] = field(default_factory=dict)
+
+    def for_instance(self, instance_type: str | list[str] | None) -> HostingConfig:
+        """The profile for a pinned instance type (or the first of a list); the default
+        profile when none is pinned. Raises for a type AWS hasn't validated the model on."""
+        if not instance_type or not self.variants:
+            return self.hosting
+        types = instance_type if isinstance(instance_type, list) else [instance_type]
+        for t in types:
+            if t not in self.variants:
+                raise UnsupportedParameterError(
+                    f"AWS doesn't list {t} for this model; supported: " + ", ".join(self.variants)
+                )
+        chosen = self.variants[types[0]]
+        if any(self.variants[t].gpus != chosen.gpus for t in types):
+            raise UnsupportedParameterError(
+                "instance_type fallbacks must have the same GPU count (the model is "
+                "sharded across them)"
+            )
+        return chosen
 
 
 @dataclass(frozen=True)
@@ -166,6 +188,29 @@ def hub_technique(technique: Technique) -> str:
     return _TECHNIQUES[technique]
 
 
+def _hosting_variants(doc: dict[str, Any], env: dict[str, str]) -> dict[str, HostingConfig]:
+    """Per-instance base hosting profiles from ``HostingInstanceTypeVariants``: keys like
+    "ml.g5.12xlarge" carry the env and resource requirements, family keys ("g5") the image.
+    Only types in ``SupportedInferenceInstanceTypes`` (when listed) are kept."""
+    variants = (doc.get("HostingInstanceTypeVariants") or {}).get("Variants") or {}
+    supported = doc.get("SupportedInferenceInstanceTypes")
+    out: dict[str, HostingConfig] = {}
+    for itype, v in variants.items():
+        props = v.get("Properties") or {}
+        req = props.get("ResourceRequirements")
+        if not itype.startswith("ml.") or not req or (supported and itype not in supported):
+            continue
+        family = (variants.get(itype.split(".")[1]) or {}).get("Properties") or {}
+        out[itype] = HostingConfig(
+            image_uri=props.get("ImageUri") or family.get("ImageUri") or doc["HostingEcrUri"],
+            instance_type=itype,
+            gpus=int(req.get("NumAccelerators") or instance_gpus(itype)),
+            memory_mb=int(req.get("MinMemoryMb") or 8192),
+            environment={**env, **(props.get("EnvironmentVariables") or {})},
+        )
+    return out
+
+
 def parse_hub_model(resp: dict[str, Any]) -> HubModel:
     doc = json.loads(resp["HubContentDocument"])
     recipes = []
@@ -202,9 +247,11 @@ def parse_hub_model(resp: dict[str, Any]) -> HubModel:
             for v in doc.get("InferenceEnvironmentVariables", [])
             if v.get("Scope", "container") == "container" and "Default" in v
         }
+        variants = _hosting_variants(doc, env)
         base = BaseHosting(
             artifact_uri=doc["HostingArtifactUri"],
-            hosting=HostingConfig(
+            hosting=variants.get(itype)
+            or HostingConfig(
                 image_uri=doc["HostingEcrUri"],
                 instance_type=itype,
                 gpus=instance_gpus(itype),
@@ -212,6 +259,7 @@ def parse_hub_model(resp: dict[str, Any]) -> HubModel:
                 environment=env,
             ),
             network_isolation=bool(doc.get("InferenceEnableNetworkIsolation", False)),
+            variants=variants,
         )
     return HubModel(
         name=resp["HubContentName"],

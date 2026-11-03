@@ -225,6 +225,32 @@ def test_hub_base_hosting_parsed_from_real_metadata() -> None:
     assert m.base.network_isolation is True
 
 
+def test_hub_base_hosting_per_instance_profiles() -> None:
+    # Real metadata (2026-11-02): Qwen3 8B defaults to an 8-GPU ml.p4d.24xlarge, and each
+    # supported type has its own GPU count, host memory and tensor parallelism.
+    from skyhammer.errors import UnsupportedParameterError
+    from skyhammer.hub import parse_hub_model
+    from tests.conftest import FIXTURES
+
+    m = parse_hub_model(json.loads((FIXTURES / "hub_qwen3_8b.json").read_text()))
+    assert m.base is not None
+    default = m.base.hosting
+    assert default.instance_type == "ml.p4d.24xlarge" and default.gpus == 8
+    assert default.environment["OPTION_TENSOR_PARALLEL_DEGREE"] == "8"
+    assert default.environment["HF_MODEL_ID"] == "/opt/ml/model"  # model-level env kept
+    assert m.base.for_instance(None) is default
+    g6 = m.base.for_instance("ml.g6.12xlarge")
+    assert g6.gpus == 4 and g6.memory_mb == 98304
+    assert g6.environment["OPTION_TENSOR_PARALLEL_DEGREE"] == "4"
+    assert m.base.for_instance(["ml.g6.12xlarge", "ml.g5.12xlarge"]).instance_type == (
+        "ml.g6.12xlarge"
+    )
+    with pytest.raises(UnsupportedParameterError, match="supported: "):
+        m.base.for_instance("ml.g6.2xlarge")
+    with pytest.raises(UnsupportedParameterError, match="same GPU count"):
+        m.base.for_instance(["ml.g6.12xlarge", "ml.p4d.24xlarge"])
+
+
 def test_base_model_request_uses_hub_access_and_eula() -> None:
     from skyhammer.serving import model_request
 

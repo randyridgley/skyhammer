@@ -7,19 +7,22 @@ speeds up decoding when drafts are often right. The ``ngram`` method drafts from
 already in the prompt (good for summaries, edits and RAG answers) and needs no extra
 model; ``{"method": "eagle3", "model": "<draft>", ...}`` uses a trained draft head.
 
-Both are SageMaker endpoint options; Bedrock serving doesn't expose them. AWS's
-recommended instance stays the default, so pass a smaller ``instance_type`` to turn the
-memory fp8 frees into a cheaper endpoint. Works the same on fine-tunes served from
+Both are SageMaker endpoint options; Bedrock serving doesn't expose them. Without
+``instance_type`` the endpoint uses AWS's recommended instance, which for Qwen3 8B is an
+8-GPU ml.p4d.24xlarge (~$25/h). Here it's pinned to the cheapest type AWS validated the
+model on, with a capacity fallback of the same GPU count; Skyhammer applies AWS's settings
+for that type (tensor parallelism, memory). Works the same on fine-tunes served from
 SageMaker: ``LLM.get("my-model").deploy(quantize="fp8")``.
 
-Cost: one GPU endpoint for ~20 min (Qwen3 8B on AWS's recommended instance, about $1/h),
-deleted at the end. Run: uv run python examples/44_quantized_endpoint.py
+Cost: ml.g6.12xlarge (4x L4, $5.75/h) for ~25 min, about $2.40, deleted at the end.
+Run: uv run python examples/44_quantized_endpoint.py
 """
 
 from skyhammer import LLM
 
 llm = LLM("qwen3-8b").deploy(
     "qwen3-8b-fp8",
+    instance_type=["ml.g6.12xlarge", "ml.g5.12xlarge"],  # 4 GPUs each; fallback on capacity
     quantize="fp8",
     speculative={"method": "ngram", "num_speculative_tokens": 4, "prompt_lookup_max": 4},
 )

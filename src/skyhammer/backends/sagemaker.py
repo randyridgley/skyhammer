@@ -854,7 +854,7 @@ class SageMakerServerlessBackend:
                 f"({hub_model.license}); pass accept_eula=True"
             )
         names = EndpointNames.for_deployment(opts.name)
-        hosting = hub_model.base.hosting
+        hosting = hub_model.base.for_instance(opts.instance_type)
         scaling = opts.scaling or Scaling()
         if opts.adapters:
             # Serve the base weights with the fine-tuning recipe's LoRA-enabled vLLM container
