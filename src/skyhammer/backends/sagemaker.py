@@ -569,7 +569,7 @@ class SageMakerServerlessBackend:
             output_uri=output_uri,
             output_group_arn=self.ensure_model_package_group(request, restricted=True),
             checkpoint_group_arn=self.ensure_model_package_group(
-                request, name=f"{request.output_model}-checkpoints", restricted=True
+                request, name=agent_rl.checkpoint_group(request.output_model), restricted=True
             ),
             kms_key_arn=res.kms_key_arn,
             tags=tagging.as_aws(request.tags),
@@ -709,10 +709,14 @@ class SageMakerServerlessBackend:
 
     def checkpoints(self, record: JobRecord) -> list[Checkpoint]:
         """``checkpoints/step_NNNN`` folders in the job output, with the training metrics
-        logged at that step. They hold FSDP training state (for resuming or offline
-        conversion), so they aren't directly servable; the final weights are."""
+        logged at that step. They hold FSDP training state, so they aren't directly
+        servable; the final weights are. Multi-turn RL jobs register model packages in
+        the ``<model>-checkpoints`` group instead; resumable ones restart a stopped run."""
         if _is_agent_rl(record.job_id):
-            return []  # registered in the "<model>-checkpoints" model package group
+            job = self.sagemaker.describe_job(
+                JobName=record.job_name, JobCategory=agent_rl.JOB_CATEGORY
+            )
+            return agent_rl.list_checkpoints(self.sagemaker, job, record.output_model)
         res = self.session.resources_for(self.region)
         s3 = self.session.client("s3", region=self.region)
         prefix = f"jobs/{record.job_name}/output/{record.job_name}/output/model/"

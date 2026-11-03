@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -42,6 +43,7 @@ from skyhammer.graders import Grader
 from skyhammer.imports import import_to_bedrock
 from skyhammer.inference import Chat, Usage
 from skyhammer.jobs import (
+    Checkpoint,
     FineTuningJob,
     Hyperparameters,
     JobRecord,
@@ -114,9 +116,16 @@ class LLM:
             return Routing(s.inference_routing)
         return Routing.GEO if s.cross_region else Routing.REGION
 
-    def _continuation_source(self, ref: ModelRef) -> str:
+    def _continuation_source(self, ref: ModelRef, technique: Technique) -> str:
         """What a continued job trains from: the Bedrock custom model, or the model package
         SageMaker registered for the job that produced this model."""
+        if ":model-package/" in ref.model_arn:  # a multi-turn RL output (restricted)
+            if technique is not Technique.AGENTIC:
+                raise SkyhammerError(
+                    f"{ref.name} is a multi-turn RL output, whose weights AWS keeps; it can "
+                    "only be trained further with create_agent_rl_job"
+                )
+            return ref.model_arn
         if ref.backend == BackendKind.BEDROCK.value:
             if ":custom-model/" not in ref.model_arn:
                 raise SkyhammerError(f"{ref.name} isn't a Bedrock custom model ({ref.model_arn})")
@@ -299,13 +308,19 @@ class LLM:
         max_steps: int,
         group_size: int | None = None,
         hyperparameters_extra: dict[str, Any] | None = None,
+        resume_from: Checkpoint | str | None = None,
         **kwargs: Any,
     ) -> FineTuningJob:
         """Multi-turn RL against your agent (an AgentCore runtime named ``skyhammer_agent*``
         or a ``skyhammer-agent-*`` Lambda ARN): each step runs ``batch_size`` tasks
         ``group_size`` times through the agent and learns from how the rewards compare.
         ``max_steps`` bounds the token-billed run. See ``skyhammer.agent_rl`` for the agent
-        side and requirements."""
+        side and requirements.
+
+        ``resume_from``: a resumable checkpoint of a failed or stopped run
+        (``job.checkpoints()``) to continue from. Pass the same tasks and settings as that
+        run; AWS requires them, and Skyhammer checks before starting. On
+        ``LLM.get(output_model)`` this instead trains that finished output further."""
         if kwargs.get("max_cost_usd") is not None:
             raise UnsupportedParameterError(
                 "max_cost_usd can't be enforced here: multi-turn RL is billed per token your "
@@ -314,12 +329,27 @@ class LLM:
         extra = {"max_steps": max_steps, **(hyperparameters_extra or {})}
         if group_size is not None:
             extra["group_size"] = group_size
+        before_submit = None
+        if resume_from is not None:
+            kwargs["resume_from"] = agent_rl.resume_arn(resume_from)
+            record = (
+                registry.load_job(self.session, resume_from.job_name)
+                if isinstance(resume_from, Checkpoint) and resume_from.job_name
+                else None
+            )
+            if record is not None:
+                written_by = record
+
+                def before_submit(request: TrainingRequest) -> None:
+                    agent_rl.check_resume(written_by, request)
+
         return self._create_job(
             Technique.AGENTIC,
             tasks,
             output_model=output_model,
             agent=agent,
             hyperparameters_extra=extra,
+            before_submit=before_submit,
             **kwargs,
         )
 
@@ -463,13 +493,16 @@ class LLM:
         max_hours: float | None = None,
         code: TrainingCode | None = None,
         agent: str | None = None,
+        resume_from: str | None = None,
         **hyperparameters: Any,
     ) -> tuple[TrainingRequest, cost.CostEstimate]:
         """Resolve route, validate data, and estimate cost without touching AWS.
 
         On a fine-tuned model (``LLM.get(name)``) this plans *continued* customization: the
-        job trains that model further, on the backend and region that produced it."""
-        source_model = None
+        job trains that model further, on the backend and region that produced it.
+        ``resume_from`` (multi-turn RL): a checkpoint package ARN to continue from."""
+        technique = Technique(technique)
+        source_model = resume_from
         if self.model_ref is not None:
             ref = self.model_ref
             if backend and BackendKind(backend).value != ref.backend:
@@ -478,9 +511,15 @@ class LLM:
                 )
             backend = BackendKind(ref.backend)
             serving = serving or ref.serving
-            source_model = self._continuation_source(ref)
+            if resume_from:
+                raise SkyhammerError(
+                    "resume_from continues a stopped run from its base model, e.g. "
+                    'LLM("gpt-oss-20b"); LLM.get(name) trains a finished output further'
+                )
+            source_model = self._continuation_source(ref, technique)
+        if resume_from and technique is not Technique.AGENTIC:
+            raise UnsupportedParameterError("resume_from applies to multi-turn RL jobs only")
         entry = self._tunable()
-        technique = Technique(technique)
         if technique is Technique.CPT and entry.family == "nova":
             raise UnsupportedRouteError(
                 f"{entry.display_name} continued pre-training runs only as SageMaker HyperPod "
@@ -662,9 +701,12 @@ class LLM:
         *,
         output_model: str,
         max_cost_usd: float | None = None,
+        before_submit: Callable[[TrainingRequest], None] | None = None,
         **kwargs: Any,
     ) -> FineTuningJob:
         request, estimate = self.plan(technique, dataset, output_model=output_model, **kwargs)
+        if before_submit:
+            before_submit(request)
         cost.check_guardrails(estimate, self.session.settings.guardrails, max_cost_usd)
         backend = get_backend(request.route.backend, self.session, request.route.region)
 

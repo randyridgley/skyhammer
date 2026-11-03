@@ -19,6 +19,12 @@ Two halves:
   through the same agent, on a base model or a trained output (``LLM.get(name)``), and
   reports reward and pass@k to MLflow. The trained output is a restricted model package
   (AWS keeps the weights): you can evaluate it, but not download or serve it yet.
+- **Checkpoints**: the job registers its training state every step in the
+  ``<output_model>-checkpoints`` group; ``job.checkpoints()`` lists them. If a job fails
+  or is stopped, start it again with the same tasks and settings plus
+  ``resume_from=job.checkpoints()[-1]`` to continue from that step. To train a finished
+  output further (new tasks, reward or settings), call ``create_agent_rl_job`` on
+  ``LLM.get(output_model)``: that starts from its weights with a fresh optimizer.
 - **The agent** (AgentCore or Lambda): wrap the entrypoint with ``rollout_handler``::
 
       from skyhammer.agent_rl import Rollout, rollout_handler
@@ -54,11 +60,12 @@ from typing import TYPE_CHECKING, Any
 
 from skyhammer.catalog import DatasetLimits
 from skyhammer.errors import ConfigError, SkyhammerError, UnsupportedParameterError
+from skyhammer.jobs import Checkpoint
 
 if TYPE_CHECKING:
     from skyhammer.hub import HubModel, ParamSpec, Recipe
     from skyhammer.inference import ChatCompletion
-    from skyhammer.jobs import TrainingRequest
+    from skyhammer.jobs import JobRecord, TrainingRequest
     from skyhammer.session import Session
 
 log = logging.getLogger("skyhammer")
@@ -272,6 +279,9 @@ def build_job(
         "ModelPackageConfig": {
             "OutputModelPackageGroupArn": output_group_arn,
             "IntermediateCheckpointModelPackageGroupArn": checkpoint_group_arn,
+            # A resumable checkpoint continues that run; an output package starts a new
+            # run from its weights (iterative training).
+            **({"InputModelPackageArn": request.source_model} if request.source_model else {}),
         },
         "TrainingConfig": training,
     }
@@ -337,6 +347,89 @@ def parse_job(job: dict[str, Any]) -> JobInfo:
             info.progress,
         )
     return info
+
+
+# ---- checkpoints ----
+
+# Model package metadata AWS documents for resumable checkpoints (IsCheckpoint=true); the
+# step key isn't documented, so these are tried in order, then the package's position.
+_STEP_KEYS = ("Step", "TrainingStep", "GlobalStep", "step", "global_step")
+
+
+def checkpoint_group(output_model: str) -> str:
+    return f"{output_model}-checkpoints"
+
+
+def list_checkpoints(sm: Any, job: dict[str, Any], output_model: str) -> list[Checkpoint]:
+    """The packages a job registered in its checkpoint group, oldest first. Several runs
+    can share the group, so only packages created while this job ran are kept."""
+    window: dict[str, Any] = {"CreationTimeAfter": job["CreationTime"]}
+    if job.get("EndTime"):
+        window["CreationTimeBefore"] = job["EndTime"]
+    summaries: list[dict[str, Any]] = []
+    for page in sm.get_paginator("list_model_packages").paginate(
+        ModelPackageGroupName=checkpoint_group(output_model),
+        SortBy="CreationTime",
+        SortOrder="Ascending",
+        **window,
+    ):
+        summaries.extend(page.get("ModelPackageSummaryList", []))
+    out = []
+    for position, summary in enumerate(summaries, 1):
+        arn = summary["ModelPackageArn"]
+        meta = sm.describe_model_package(ModelPackageName=arn).get("CustomerMetadataProperties", {})
+        step = next((int(float(meta[k])) for k in _STEP_KEYS if k in meta), position)
+        out.append(
+            Checkpoint(
+                step,
+                uri=arn,
+                resumable=str(meta.get("IsCheckpoint", "")).lower() == "true",
+                job_name=job["JobName"],
+            )
+        )
+    return out
+
+
+def resume_arn(checkpoint: Checkpoint | str) -> str:
+    """The model package ARN to resume from (a resumable multi-turn RL checkpoint)."""
+    arn = checkpoint if isinstance(checkpoint, str) else checkpoint.uri
+    if not arn or ":model-package/" not in arn:
+        raise SkyhammerError(
+            "resume_from takes a multi-turn RL checkpoint (job.checkpoints()) or its model "
+            f"package ARN, not {arn!r}"
+        )
+    if isinstance(checkpoint, Checkpoint) and not checkpoint.resumable:
+        raise SkyhammerError(
+            f"Checkpoint at step {checkpoint.step} holds weights only, not the optimizer "
+            "state needed to resume; pick one with resumable=True"
+        )
+    return arn
+
+
+def check_resume(record: JobRecord, request: TrainingRequest) -> None:
+    """AWS resumes a run only with the same base model, tasks and hyperparameters; check
+    the new request against the record of the job that wrote the checkpoint."""
+    differences = []
+    if record.backend_model_id != request.route.capability.backend_model_id:
+        differences.append("base model")
+    if record.dataset.get("sha256") != request.dataset.sha256:
+        differences.append("tasks")
+    old, new = record.hyperparameters, request.hyperparameters.model_dump()
+    differences += sorted(
+        f"hyperparameter {k}" for k in {*old, *new} - {"extra"} if old.get(k) != new.get(k)
+    )
+    old_extra, new_extra = old.get("extra") or {}, new.get("extra") or {}
+    differences += sorted(
+        f"hyperparameter {k}"
+        for k in {*old_extra, *new_extra}
+        if old_extra.get(k) != new_extra.get(k)
+    )
+    if differences:
+        raise SkyhammerError(
+            f"Can't resume {record.job_name}: the new job changes its "
+            f"{', '.join(differences)}. Resuming needs the same settings; to train further "
+            "with new ones, start from the finished output (LLM.get(name))"
+        )
 
 
 # ---- evaluation ----

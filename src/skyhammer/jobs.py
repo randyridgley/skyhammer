@@ -218,14 +218,18 @@ class Checkpoint:
     """An intermediate snapshot of a training job.
 
     ``model_id`` is set when the checkpoint can be called as a model (bedrock-mantle);
-    ``uri`` points at stored training state otherwise (SageMaker: FSDP shards in S3, kept
-    for resuming or offline conversion, not directly servable).
+    ``uri`` points at stored training state otherwise (SageMaker: FSDP shards in S3, not
+    directly servable; multi-turn RL: a model package ARN). ``resumable`` checkpoints hold
+    the full training state, so a new job can pick up where this one stopped
+    (``create_agent_rl_job(..., resume_from=checkpoint)``).
     """
 
     step: int
     metrics: dict[str, float] = field(default_factory=dict)
     model_id: str | None = None
     uri: str | None = None
+    resumable: bool = False
+    job_name: str | None = None  # the job that wrote it
     _ref: ModelRef | None = field(default=None, repr=False, compare=False)
 
     def llm(self, session: Any = None) -> LLM:

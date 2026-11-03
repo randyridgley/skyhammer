@@ -620,3 +620,163 @@ def test_eval_job_on_base_model_and_checks(
     doc = json.loads(fake.created["JobConfigDocument"])
     assert "ModelPackageConfig" not in doc
     assert doc["EvaluationConfig"]["HyperParameters"] == {"batch": {"eval_group_size": 1}}
+
+
+# ---- checkpoints and resume (TR-15) ----
+
+CKPT_GROUP = "wordle-gptoss-checkpoints"
+
+
+def ckpt_arn(version: int) -> str:
+    return f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package/{CKPT_GROUP}/{version}"
+
+
+class FakeCheckpoints(FakeSageMaker):
+    """A job that registered a resumable and a weights-only package at each of 2 steps."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.listed: dict[str, Any] = {}
+        self.meta = {
+            ckpt_arn(1): {"IsCheckpoint": "true", "Step": "1"},
+            ckpt_arn(2): {"Step": "1"},
+            ckpt_arn(3): {"IsCheckpoint": "true", "Step": "2"},
+            ckpt_arn(4): {},
+        }
+
+    def describe_job(self, **kw: Any) -> dict[str, Any]:
+        return {
+            "JobName": "wordle-gptoss-0a1b2c3d",
+            "JobArn": JOB_ARN,
+            "JobStatus": "Stopped",
+            "CreationTime": 100.0,
+            "EndTime": 200.0,
+        }
+
+    def get_paginator(self, name: str) -> Any:
+        fake = self
+
+        class P:
+            def paginate(self, **kw: Any) -> list[dict[str, Any]]:
+                valid("sagemaker", "ListModelPackages", kw)
+                fake.listed = kw
+                return [
+                    {"ModelPackageSummaryList": [{"ModelPackageArn": a} for a in fake.meta][:2]},
+                    {"ModelPackageSummaryList": [{"ModelPackageArn": a} for a in fake.meta][2:]},
+                ]
+
+        return P()
+
+    def describe_model_package(self, ModelPackageName: str) -> dict[str, Any]:
+        meta = self.meta[ModelPackageName]
+        return {"CustomerMetadataProperties": meta} if meta else {}
+
+
+def test_agent_rl_checkpoints(agent_session: Session) -> None:
+    backend = SageMakerServerlessBackend(agent_session)
+    fake = FakeCheckpoints()
+    backend.sagemaker = fake
+    record = SimpleNamespace(
+        job_id=JOB_ARN, job_name="wordle-gptoss-0a1b2c3d", output_model="wordle-gptoss"
+    )
+    ckpts = backend.checkpoints(record)  # type: ignore[arg-type]
+    # Only packages created while this job ran (other runs share the group).
+    assert fake.listed["ModelPackageGroupName"] == CKPT_GROUP
+    assert (fake.listed["CreationTimeAfter"], fake.listed["CreationTimeBefore"]) == (100.0, 200.0)
+    assert [(c.step, c.uri, c.resumable) for c in ckpts] == [
+        (1, ckpt_arn(1), True),
+        (1, ckpt_arn(2), False),
+        (2, ckpt_arn(3), True),
+        (4, ckpt_arn(4), False),  # no step recorded: its position
+    ]
+    assert {c.job_name for c in ckpts} == {"wordle-gptoss-0a1b2c3d"}
+
+
+def plan_rl(llm: LLM, **kw: Any) -> Any:
+    request, _ = llm.plan(
+        "agentic",
+        kw.pop("data", None) or tasks(),
+        output_model="wordle-gptoss",
+        agent=RUNTIME,
+        hyperparameters_extra={"max_steps": 20, "group_size": 8},
+        **{"batch_size": 32, **kw},
+    )
+    return request
+
+
+def test_resume_from_checkpoint(agent_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    from skyhammer import agent_rl
+    from skyhammer.jobs import Checkpoint, JobRecord
+
+    llm = LLM("gpt-oss-20b", session=agent_session)
+    first = plan_rl(llm)
+    resumed = plan_rl(llm, resume_from=ckpt_arn(3))
+    # A new job (the stopped one keeps its name), continuing from the checkpoint.
+    assert resumed.job_name != first.job_name and resumed.source_model == ckpt_arn(3)
+    backend = SageMakerServerlessBackend(agent_session)
+    fake = FakeSageMaker()
+    backend.sagemaker = fake
+    monkeypatch.setattr(Dataset, "upload", lambda self, b, t: "s3://bucket/datasets/wordle.jsonl")
+    backend.submit(resumed)
+    config = json.loads(fake.created["JobConfigDocument"])["ModelPackageConfig"]
+    assert config["InputModelPackageArn"] == ckpt_arn(3)
+    assert config["IntermediateCheckpointModelPackageGroupArn"].endswith("/" + CKPT_GROUP)
+
+    # AWS resumes only with the same base model, tasks and hyperparameters.
+    record = JobRecord.from_request(
+        first, JobHandle("sagemaker", first.job_name, JOB_ARN, "us-east-1")
+    )
+    agent_rl.check_resume(record, resumed)
+    other = plan_rl(llm, data=tasks(70), batch_size=64, resume_from=ckpt_arn(3))
+    with pytest.raises(SkyhammerError, match="changes its tasks, hyperparameter batch_size"):
+        agent_rl.check_resume(record, other)
+
+    weights = Checkpoint(1, uri=ckpt_arn(2), job_name=first.job_name)
+    with pytest.raises(SkyhammerError, match="weights only"):
+        llm.create_agent_rl_job(
+            tasks(),
+            agent=RUNTIME,
+            output_model="wordle-gptoss",
+            max_steps=20,
+            batch_size=32,
+            resume_from=weights,
+        )
+    with pytest.raises(SkyhammerError, match="model package"):
+        agent_rl.resume_arn("s3://bucket/jobs/x/checkpoints/step_5/")
+    # The mismatch is caught before anything is submitted.
+    monkeypatch.setattr("skyhammer.llm.registry.load_job", lambda s, name: record)
+    ckpt = Checkpoint(2, uri=ckpt_arn(3), resumable=True, job_name=first.job_name)
+    with pytest.raises(SkyhammerError, match="changes its hyperparameter max_steps"):
+        llm.create_agent_rl_job(
+            tasks(),
+            agent=RUNTIME,
+            output_model="wordle-gptoss",
+            max_steps=40,
+            group_size=8,
+            batch_size=32,
+            resume_from=ckpt,
+        )
+    with pytest.raises(UnsupportedParameterError, match="multi-turn RL jobs only"):
+        llm.plan("sft", tasks(), output_model="x", resume_from=ckpt_arn(3))
+
+
+def test_train_rl_output_further(agent_session: Session) -> None:
+    from skyhammer.backends.base import ModelRef
+
+    ref = ModelRef(
+        name="wordle-gptoss",
+        model_arn=PACKAGE,
+        backend="sagemaker",
+        base_alias="gpt-oss-20b",
+        region="us-east-1",
+        api="openai_chat",
+        serving="sagemaker",
+        artifacts_uri=None,
+    )
+    llm = LLM.from_model_ref(ref, session=agent_session)
+    # Iterative training starts from the output package's weights (no AWS lookups).
+    assert plan_rl(llm).source_model == PACKAGE
+    with pytest.raises(SkyhammerError, match="only be trained further with create_agent_rl_job"):
+        llm.plan("sft", tasks(), output_model="wordle-sft")
+    with pytest.raises(SkyhammerError, match="resume_from continues a stopped run"):
+        plan_rl(llm, resume_from=ckpt_arn(3))

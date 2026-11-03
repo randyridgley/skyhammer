@@ -12,6 +12,31 @@ run where marked 🔴, **and it has a Python example in `examples/`**. Update th
 
 Legend: ✅ done · 🟡 partial (see notes) · ⬜ planned · ➖ out of scope (with reason)
 
+### Status at a glance (2026-11-03)
+
+| Area | ✅ | 🟡 | ➖ |
+|---|---|---|---|
+| 2.1 Developer experience | 14 | 0 | 0 |
+| 2.2 Data | 11 | 1 | 0 |
+| 2.3 Training | 16 | 4 | 0 |
+| 2.4 Evaluation | 8 | 2 | 0 |
+| 2.5 Serverless inference | 23 | 0 | 1 |
+| 2.6 Serving and inference | 15 | 2 | 1 |
+| 2.7 Operations, cost and observability | 6 | 1 | 0 |
+| 2.8 Security and enterprise | 5 | 2 | 1 |
+| 2.9 Packaging and quality | 6 | 2 | 0 |
+| **Total** | **104** | **14** | **3** |
+
+What the 🟡 items wait on (details in each row):
+
+| Waiting on | Items |
+|---|---|
+| A live AWS run (code built) | TR-9 Nova RFT ($80/h), TR-11 RLAIF rerun (~$39), TR-12 agentic RL and TR-15 resume (MLflow App + AgentCore runtime, ~$5), SV-14 fp8 endpoint (~$2.40, 4-GPU capacity) and AWQ job, SE-5 VPC-only run, EV-9 MLflow App |
+| An account, key or quota | EV-10 Langfuse/W&B keys, SE-6 a second account, SV-10 provisioned-throughput quota (≥$60.50/h) |
+| AWS | OP-8 support case (cross-region training failure) |
+| Release setup | PK-5 CI role (OIDC), PK-7 PyPI publishing |
+| Code not yet written | DA-12 Nova Forge mixing (needs a subscription), SV-14 EAGLE draft training (AWS doesn't document deploying its output), TR-12 Qwen 3.6, SageMaker vision data format (DA-10) |
+
 ---
 
 ## 1. Positioning: where we win, where we must reach parity
@@ -91,10 +116,10 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | TR-9 | RFT, Nova 2 Lite (Bedrock-native) | 🟡 | M4 | Bedrock RFT built: `rftConfig` with a Lambda reward (Python graders deploy with Bedrock's list-in/list-out reward contract), prompt + `reference_answer` rows (100-20K), $80/h price from the Price List, warning that Bedrock RFT has no runtime cap. 🔴 live run pending (billed $80/h) |
 | TR-10 | RLVR (Lambda reward) on SageMaker | ✅ | M4 | verl data format; Python graders auto-deploy as the reward Lambda, registered as a SageMaker Hub evaluator (JsonDoc) in Skyhammer's tagged `skyhammer` hub (`EvaluatorArn` must be hub content, not a Lambda ARN; found live). Verified live 2026-10-29: Qwen3 0.6B RLVR on 400 math prompts, ~5 min training, Bedrock import, chat answers `3 + 4 = 7`, everything deleted |
 | TR-11 | RLAIF (LLM-judge reward) | 🟡 | M4 | `Grader.llm_judge(model, rubric)` as an RL reward on SageMaker, Bedrock RFT and bedrock-mantle: deployed as a reward Lambda that asks the judge model (Bedrock Converse) for a 1-5 score with the eval prompt, mapped to 0-1. Live 2026-10-30: SageMaker RL on Qwen3-0.6B called the judge ~6,500 times over 37 min, then failed: Nova Pro throttled 103 calls and the raised errors crashed the reward worker. The judge now retries adaptively and scores 0 instead of failing. 🔴 rerun pending |
-| TR-12 | Multi-turn / agentic RL | 🟡 | M6 | `create_agent_rl_job(tasks, agent=<skyhammer_agent* AgentCore runtime or skyhammer-agent-* Lambda ARN>, max_steps=, group_size=)` → SageMaker MTRL (`CreateJob`, category AgentRFT, JobConfigDocument v1.0.0): GPT-OSS 20B (us-east-1/us-west-2), Gemma 4 31B (us-west-2). Agent side: `skyhammer.agent_rl.rollout_handler` / `Rollout.chat` call the policy through `sagemakerjobruntime` (Sample, CompleteRollout, UpdateReward; SigV4, no bearer tokens) and always report a reward. Checks before spending: agent ARN and region, recipe hyperparameters (typed, from the Hub), batch vs tasks, required `max_steps` (token-billed; `max_cost_usd` refused as unenforceable), MLflow App (required by the service). Bootstrap `AgentJobRole` (trusts job.sagemaker.amazonaws.com, scoped to Skyhammer's bucket instead of AmazonSageMakerJobFullAccess) and `skyhammer auth policy --agent-rl`. Status shows step and billed tokens. Nova 2 Lite added 2026-11-03 (us-east-1/us-west-2; real Hub recipe recorded: batch 8-64). Output is a restricted model package (AWS keeps the weights): output groups are created with `ManagedStorageType: Restricted`, the job reports the package ARN instead of importing it, and `deploy()` explains it can't be served; `create_agent_eval_job(tasks, agent=, group_size=, pass_k=, temperature=)` evaluates a base model or the output (`AgentRFTEvaluation` jobs, pass@k to MLflow, reattaches on same inputs). Not yet: Qwen 3.6 (not in catalog), serving the output (AWS: evaluation only), VPC. 🔴 live run pending (~$5 + AgentCore + MLflow App) |
+| TR-12 | Multi-turn / agentic RL | 🟡 | M6 | `create_agent_rl_job(tasks, agent=<skyhammer_agent* AgentCore runtime or skyhammer-agent-* Lambda ARN>, max_steps=, group_size=)` → SageMaker MTRL (`CreateJob`, category AgentRFT, JobConfigDocument v1.0.0): GPT-OSS 20B (us-east-1/us-west-2), Gemma 4 31B (us-west-2). Agent side: `skyhammer.agent_rl.rollout_handler` / `Rollout.chat` call the policy through `sagemakerjobruntime` (Sample, CompleteRollout, UpdateReward; SigV4, no bearer tokens) and always report a reward. Checks before spending: agent ARN and region, recipe hyperparameters (typed, from the Hub), batch vs tasks, required `max_steps` (token-billed; `max_cost_usd` refused as unenforceable), MLflow App (required by the service). Bootstrap `AgentJobRole` (trusts job.sagemaker.amazonaws.com, scoped to Skyhammer's bucket instead of AmazonSageMakerJobFullAccess) and `skyhammer auth policy --agent-rl`. Status shows step and billed tokens. Nova 2 Lite added 2026-11-03 (us-east-1/us-west-2; real Hub recipe recorded: batch 8-64). Output is a restricted model package (AWS keeps the weights): output groups are created with `ManagedStorageType: Restricted`, the job reports the package ARN instead of importing it, and `deploy()` explains it can't be served; `create_agent_eval_job(tasks, agent=, group_size=, pass_k=, temperature=)` evaluates a base model or the output (`AgentRFTEvaluation` jobs, pass@k to MLflow, reattaches on same inputs). Checkpoints, resume and iterative training: see TR-15. Not yet: Qwen 3.6 (not in catalog), serving the output (AWS: evaluation only), VPC. 🔴 live run pending (~$5 + AgentCore + MLflow App) |
 | TR-13 | RL cost guardrail (max hours) | ✅ | M4 | RL jobs always get `max_hours` (default 4h) → `StoppingCondition`; estimate = live hourly price × cap ($80/h), enforced by `max_cost_usd`. Live: SageMaker serverless accepted the cap on the RLVR job (it finished in 5 min, so the cap didn't have to stop it) |
 | TR-14 | Continued pre-training | ✅ | M5 | `create_cpt_job` on open dense models (Qwen3, Qwen2.5, DeepSeek R1 Distill): `{"text"}` documents packed into blocks, LoRA (merged) or full, as a SageMaker training job with the HF PyTorch DLC and Skyhammer's `cpt_train.py`, base weights from the open JumpStart artifacts, sized to one GPU instance and capped by `max_hours` (instance-hour Price List estimate); output imports into Bedrock. Checked live 2026-11-01: no Bedrock model offers CONTINUED_PRE_TRAINING any more, and Nova CPT is HyperPod-only (8-24 ml.p5.48xlarge), so Nova raises a clear error. Live 2026-11-02: Qwen3 0.6B LoRA CPT on ml.g5.2xlarge (loss 0.668), imported into Bedrock and answered; found and fixed VolumeKmsKeyId on local-NVMe instances. |
-| TR-15 | Checkpoint listing, eval and resume | 🟡 | M4 | `job.checkpoints()`: step, metrics and location. SageMaker: `step_NNNN` FSDP training state in S3 with that step's metrics (live 2026-10-30). bedrock-mantle: callable checkpoint models (`checkpoint.llm()`), unit-tested. Bedrock customization keeps none. Not yet: resuming from a checkpoint, converting SageMaker checkpoints to servable weights |
+| TR-15 | Checkpoint listing, eval and resume | 🟡 | M4 | `job.checkpoints()`: step, metrics and location. SageMaker: `step_NNNN` FSDP training state in S3 with that step's metrics (live 2026-10-30). bedrock-mantle: callable checkpoint models (`checkpoint.llm()`), unit-tested. Bedrock customization keeps none. Multi-turn RL (built 2026-11-03): `job.checkpoints()` lists the packages a run registered in `<model>-checkpoints` (only its own, by creation time; `resumable` from the `IsCheckpoint` metadata); `create_agent_rl_job(..., resume_from=checkpoint)` restarts a failed or stopped run from it (`InputModelPackageArn`), after checking the base model, tasks and hyperparameters match that run's record as AWS requires; `create_agent_rl_job` on `LLM.get(output)` trains a finished output further (iterative training; other techniques refuse it). 🔴 live run pending with TR-12. Not built: resuming serverless SFT/DPO/RLVR jobs (AWS documents no resume input; `resume_from_path` is set by the service) and converting their FSDP step folders to servable weights (the final weights already are) |
 | TR-16 | Continued fine-tuning of a fine-tuned model | ✅ | M4 | `LLM.get(name).create_sft_job(...)` trains the fine-tune further on its own backend and region. SageMaker (`SourceModelPackageArn` from the earlier job's registered package): live 2026-10-30, Qwen3-0.6B LoRA v1 → v2 completed. Bedrock (custom model ARN as `baseModelIdentifier`): live 2026-10-30, Nova Micro SFT v1 → v2 completed (about 4 h for v2) |
 | TR-17 | BYO training code / custom loops | ✅ | M6 | `create_custom_job(ds, source_dir=, entry_point=)` (script mode in the HF PyTorch DLC, `requirements.txt` installed) or `image=` (your container): base weights as the `model` channel, rows passed through unchanged, every hyperparameter forwarded, `instance_type` or sized by model, `max_hours` cap (default 4h), output imported into Bedrock; code is snapshotted and hashed into the job name. Open-weight SageMaker models (gated Llama excluded). Live 2026-11-02: script mode on Qwen3 0.6B (loss 17.3 → 0.00004 over 200 steps), imported into Bedrock, answered correctly. |
 | TR-18 | Bring your own weights (import only) | ✅ | M3 | `LLM.import_weights(s3_uri, name=...)` with Custom Model Import pre-flight. Live 2026-10-30: Qwen3-0.6B from Hugging Face → S3 → import (12.6 min) → chat → delete |
@@ -271,8 +296,9 @@ AWS-side training failure under investigation). Verified live 2026-10-30: DA-3, 
 Verified live 2026-10-29: TR-8 DPO, TR-10 RLVR with an auto-deployed Python reward
 (registered as a Hub evaluator), TR-13 RL runtime/cost cap, EV-4 grader Lambdas, EV-5 LLM
 judges, OP-5 serving metrics; SV-18 GPU capacity fallback (2026-10-30). Remaining: TR-9 Nova
-RFT (built, live run pending), TR-11 RLAIF, TR-15 (checkpoint resume), SE-5 live VPC run,
-PK-5 nightly (needs the CI role).
+RFT (built, live run pending), TR-11 RLAIF (live rerun pending), TR-15 multi-turn RL
+resume (built 2026-11-03, live run pending with TR-12; serverless SFT/DPO resume has no
+AWS API), SE-5 live VPC run, PK-5 nightly (needs the CI role).
 
 ### M5: enterprise and scale
 Done: SV-11 traffic splitting, SV-12 environments, SI-24 Responses API (2026-10-30),
@@ -284,8 +310,9 @@ pending). OP-4 cost reporting verified live (2026-11-03). Remaining: PK-7 **PyPI
 ### M6: frontier
 Verified live 2026-11-02: TR-17 BYO training code, DA-10 multimodal data and TR-20 Nova
 vision fine-tuning. DA-12 dataset mixing built (Nova Forge mixing needs a subscription;
-SageMaker vision models wait on their data format). TR-12 agentic RL and SV-14
-quantization/speculative decoding built; their live runs remain.
+SageMaker vision models wait on their data format). TR-12 agentic RL (GPT-OSS 20B, Gemma 4 31B, Nova 2 Lite; evaluation jobs, resume) and
+SV-14 quantization/speculative decoding (load-time fp8, managed AWQ jobs) built
+2026-11-03; their live runs remain. Not built: EAGLE draft training, Qwen 3.6 MTRL.
 
 ## 4. Known risks and open questions
 
