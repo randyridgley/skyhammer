@@ -10,7 +10,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from skyhammer import agent_rl, cost, pretrain, pricing, registry
+from skyhammer import agent_rl, cost, optimization, pretrain, pricing, registry
 from skyhammer import tags as tagging
 from skyhammer.agent_rl import AgentEvalJob
 from skyhammer.backends import DeploymentRef, DeploymentType, DeployOptions, get_backend
@@ -49,6 +49,7 @@ from skyhammer.jobs import (
     TrainingRequest,
 )
 from skyhammer.metrics import ServingMetrics
+from skyhammer.optimization import OptimizationJob
 from skyhammer.pricing import InferencePrices
 from skyhammer.responses import Responses
 from skyhammer.router import resolve
@@ -320,6 +321,31 @@ class LLM:
             agent=agent,
             hyperparameters_extra=extra,
             **kwargs,
+        )
+
+    def create_optimization_job(
+        self,
+        output_model: str,
+        *,
+        quantize: str = "awq",
+        instance_type: str | None = None,
+        max_hours: float = 2.0,
+        accept_eula: bool = False,
+    ) -> OptimizationJob:
+        """AWQ-quantize this model's weights with a SageMaker inference optimization job
+        (a SageMaker-trained fine-tune, or a base model's prepacked weights). When it
+        finishes (``job.wait()``), ``LLM.get(output_model)`` is the 4-bit model: deploy it
+        on a smaller ``instance_type``. ``instance_type`` here is the instance the model is
+        optimized for (default: AWS's serving profile). Billed for the instance SageMaker
+        picks while it runs, capped by ``max_hours``. Same inputs → same job."""
+        _check_name(output_model)
+        return optimization.submit(
+            self,
+            output_model,
+            quantize=quantize,
+            instance_type=instance_type,
+            max_hours=max_hours,
+            accept_eula=accept_eula,
         )
 
     def create_agent_eval_job(

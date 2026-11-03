@@ -385,3 +385,25 @@ def agent_rl_policy(account_id: str, *, partition: str = "aws") -> dict[str, Any
             },
         ],
     }
+
+
+def optimization_policy(account_id: str, *, partition: str = "aws") -> dict[str, Any]:
+    """The extra permissions for SageMaker inference optimization jobs (AWQ quantization,
+    ``LLM.create_optimization_job``), kept apart from ``user_policy`` for its size limit.
+    Describing jobs is already in ``user_policy`` (``sagemaker:Describe*``); the job runs as
+    the bootstrap SageMaker role, which ``user_policy`` already lets you pass."""
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "OptimizationJobs",
+                "Effect": "Allow",
+                "Action": [
+                    "sagemaker:CreateOptimizationJob",
+                    "sagemaker:StopOptimizationJob",
+                    "sagemaker:AddTags",
+                ],
+                "Resource": f"arn:{partition}:sagemaker:*:{account_id}:optimization-job/*",
+            }
+        ],
+    }
