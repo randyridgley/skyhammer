@@ -72,7 +72,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 class FakeHub:
     """HubClient backed by real SageMaker Public Hub metadata captured for Qwen3 0.6B (and
-    GPT-OSS 20B's multi-turn RL recipe)."""
+    the multi-turn RL recipes of GPT-OSS 20B and Nova 2 Lite)."""
 
     gated_models = ("llama",)  # Gemma 4 is Apache 2.0 (not gated) in the live Hub
 
@@ -96,6 +96,8 @@ class FakeHub:
             ]
             resp["HubContentDocument"] = json.dumps(mtrl_only)
             return parse_hub_model(resp)
+        if model_id == "nova-textgeneration-lite-v2":
+            return parse_hub_model(json.loads((FIXTURES / "hub_nova_2_lite.json").read_text()))
         resp = json.loads((FIXTURES / "hub_qwen3_06b.json").read_text())
         resp["HubContentName"] = model_id
         if any(g in model_id for g in self.gated_models):
@@ -108,7 +110,7 @@ class FakeHub:
         from skyhammer.hub import parse_params
 
         if recipe.technique == "MTRL":
-            name = "mtrl_gpt_oss"
+            name = "mtrl_nova_2_lite" if "nova" in recipe.name else "mtrl_gpt_oss"
         elif recipe.technique == "DPO":
             name = "dpo_lora"
         else:

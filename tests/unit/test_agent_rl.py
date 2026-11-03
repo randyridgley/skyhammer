@@ -2,6 +2,7 @@
 
 import io
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import boto3
@@ -12,6 +13,7 @@ from botocore.validate import validate_parameters
 
 from skyhammer import Dataset, iam
 from skyhammer.agent_rl import Rollout, parse_job, rollout_handler
+from skyhammer.backends.base import DeployOptions
 from skyhammer.backends.sagemaker import SageMakerServerlessBackend
 from skyhammer.config import Settings
 from skyhammer.errors import (
@@ -64,6 +66,8 @@ class FakeSageMaker:
         )
 
     def create_model_package_group(self, **kw: Any) -> dict[str, str]:
+        valid("sagemaker", "CreateModelPackageGroup", kw)
+        assert kw["ManagedConfiguration"] == {"ManagedStorageType": "Restricted"}
         self.groups.append(kw["ModelPackageGroupName"])
         return {
             "ModelPackageGroupArn": f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package-group/"
@@ -254,11 +258,6 @@ def test_status_reports_progress_tokens_and_output(agent_session: Session) -> No
             pkg = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package/wordle-gptoss/1"
             return describe_job("Completed", "Completed", {"OutputModelPackageArn": pkg})
 
-        def describe_model_package(self, ModelPackageName: str) -> dict[str, Any]:
-            assert ModelPackageName.endswith("model-package/wordle-gptoss/1")
-            src = {"S3DataSource": {"S3Uri": "s3://b/jobs/x/output/model/"}}
-            return {"InferenceSpecification": {"Containers": [{"ModelDataSource": src}]}}
-
         def stop_job(self, **kw: Any) -> None:
             self.stopped = kw
 
@@ -267,8 +266,22 @@ def test_status_reports_progress_tokens_and_output(agent_session: Session) -> No
     handle = JobHandle("sagemaker", "wordle-gptoss-0a1b2c3d", JOB_ARN, "us-east-1")
     st = backend.describe(handle)
     assert st.state is JobState.COMPLETED
-    assert st.output_artifacts == "s3://b/jobs/x/output/model/"
+    pkg = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package/wordle-gptoss/1"
+    # A restricted model package: the ARN is the output, with no S3 weights to import.
+    assert st.output_artifacts == pkg
     assert "/aws/sagemaker/Job/AgentRFT" in (st.log_url or "")
+    record: Any = SimpleNamespace(
+        handle=handle,
+        job_id=JOB_ARN,
+        output_model="wordle-gptoss",
+        base_model="gpt-oss-20b",
+        serving="bedrock",
+    )
+    assert backend.poll(record).state is JobState.COMPLETED  # no Bedrock import attempted
+    ref = backend.finalize(record)
+    assert (ref.model_arn, ref.artifacts_uri, ref.serving) == (pkg, None, "sagemaker")
+    with pytest.raises(SkyhammerError, match="restricted model package"):
+        backend.deploy(ref, DeployOptions(name="wordle-gptoss", tags={}))
     backend.cancel(handle)
     assert sm.stopped == {"JobName": "wordle-gptoss-0a1b2c3d", "JobCategory": "AgentRFT"}
 
@@ -456,3 +469,154 @@ def test_iam_policy_and_bootstrap_role() -> None:
     invoke = next(st for st in statements if "bedrock-agentcore:InvokeAgentRuntime" in st["Action"])
     assert invoke["Resource"]["Sub"].endswith(":runtime/skyhammer_agent*")
     assert "AgentJobRoleArn" in t["Outputs"]
+
+
+def test_nova_2_lite_job(agent_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Real Hub metadata and recipe parameters (2026-11-03): Nova 2 Lite's MTRL recipe takes
+    # global_batch_size 8-64 and has its own hyperparameter set (e.g. save_every).
+    llm = LLM("nova-2-lite", session=agent_session)
+    request, _ = llm.plan(
+        "agentic",
+        tasks(16),
+        output_model="wordle-nova",
+        agent=RUNTIME,
+        batch_size=8,
+        hyperparameters_extra={"max_steps": 5, "save_every": 0},
+    )
+    assert request.route.backend.value == "sagemaker"
+    backend = SageMakerServerlessBackend(agent_session)
+    fake = FakeSageMaker()
+    backend.sagemaker = fake
+    monkeypatch.setattr(Dataset, "upload", lambda self, b, t: "s3://bucket/datasets/wordle.jsonl")
+    backend.submit(request)
+    training = json.loads(fake.created["JobConfigDocument"])["TrainingConfig"]
+    assert training["BaseModelArn"].endswith("/Model/nova-textgeneration-lite-v2")
+    assert training["HyperParameters"] == {"global_batch_size": 8, "max_steps": 5, "save_every": 0}
+    with pytest.raises(UnsupportedParameterError, match="global_batch_size"):
+        llm.plan(
+            "agentic",
+            tasks(),
+            output_model="wordle-nova",
+            agent=RUNTIME,
+            batch_size=128,  # GPT-OSS allows it; Nova 2 Lite's recipe doesn't
+            hyperparameters_extra={"max_steps": 5},
+        )
+
+
+def test_output_group_must_be_restricted(agent_session: Session) -> None:
+    llm = LLM("gpt-oss-20b", session=agent_session)
+    request, _ = llm.plan(
+        "agentic",
+        tasks(),
+        output_model="support",
+        agent=RUNTIME,
+        batch_size=32,
+        hyperparameters_extra={"max_steps": 5},
+    )
+    backend = SageMakerServerlessBackend(agent_session)
+    fake = FakeSageMaker()
+    arn = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package-group/support"
+    fake.describe_model_package_group = lambda **kw: {"ModelPackageGroupArn": arn}  # type: ignore[method-assign]
+    backend.sagemaker = fake
+    with pytest.raises(SkyhammerError, match="can't share a group"):
+        backend.ensure_model_package_group(request, restricted=True)
+    fake.describe_model_package_group = lambda **kw: {  # type: ignore[method-assign]
+        "ModelPackageGroupArn": arn,
+        "ManagedConfiguration": {"ManagedStorageType": "Restricted"},
+    }
+    assert backend.ensure_model_package_group(request, restricted=True) == arn
+    with pytest.raises(SkyhammerError, match="can't share a group"):
+        backend.ensure_model_package_group(request)
+
+
+# ---- evaluation ----
+
+PACKAGE = f"arn:aws:sagemaker:us-east-1:{ACCOUNT}:model-package/wordle-gptoss/1"
+
+
+class FakeEvalSageMaker:
+    def __init__(self) -> None:
+        self.created: dict[str, Any] = {}
+
+    def describe_job(self, **kw: Any) -> dict[str, Any]:
+        assert kw["JobCategory"] == "AgentRFTEvaluation"
+        if not self.created:
+            raise ClientError({"Error": {"Code": "ResourceNotFound", "Message": "not found"}}, "D")
+        return {"JobArn": JOB_ARN, "JobStatus": "Completed", "JobConfigDocument": "{}"}
+
+    def create_job(self, **kw: Any) -> dict[str, str]:
+        valid("sagemaker", "CreateJob", kw)
+        self.created = kw
+        return {"JobArn": JOB_ARN}
+
+
+def eval_llm(
+    agent_session: Session, monkeypatch: pytest.MonkeyPatch, llm: LLM
+) -> FakeEvalSageMaker:
+    fake = FakeEvalSageMaker()
+    real = agent_session.client
+    monkeypatch.setattr(
+        agent_session,
+        "client",
+        lambda svc, region=None: fake if svc == "sagemaker" else real(svc, region=region),
+    )
+    monkeypatch.setattr(Dataset, "upload", lambda self, b, t: "s3://bucket/datasets/held.jsonl")
+    return fake
+
+
+def test_eval_job_on_trained_output(
+    agent_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from skyhammer.backends.base import ModelRef
+
+    ref = ModelRef(
+        name="wordle-gptoss",
+        model_arn=PACKAGE,
+        backend="sagemaker",
+        base_alias="gpt-oss-20b",
+        region="us-east-1",
+        api="openai_chat",
+        serving="sagemaker",
+        artifacts_uri=None,
+    )
+    llm = LLM.from_model_ref(ref, session=agent_session)
+    fake = eval_llm(agent_session, monkeypatch, llm)
+    job = llm.create_agent_eval_job(
+        tasks(16), agent=RUNTIME, group_size=4, temperature=0.7, pass_k=[1, 4]
+    )
+    kw = fake.created
+    assert kw["JobCategory"] == "AgentRFTEvaluation" and kw["RoleArn"].endswith("AgentJobRole")
+    assert job.name.startswith("wordle-gptoss-eval-") and job.output_uri.endswith(f"/{job.name}/")
+    doc = json.loads(kw["JobConfigDocument"])
+    assert doc["ModelPackageConfig"] == {"InputModelPackageArn": PACKAGE}
+    assert doc["InputDataConfig"][0]["ChannelName"] == "evaluation"
+    assert doc["OutputDataConfig"]["MlflowConfig"] == {"MlflowResourceArn": MLFLOW}
+    ev = doc["EvaluationConfig"]
+    assert ev["BaseModelArn"].endswith("/Model/openai-reasoning-gpt-oss-20b")
+    assert ev["HyperParameters"] == {
+        "batch": {"eval_group_size": 4},
+        "eval_metrics_config": {"pass_k_values": [1, 4]},
+        "eval_sampling_params": {"temperature": 0.7},
+    }
+    # Same inputs reattach instead of starting (and billing) a second run.
+    again = llm.create_agent_eval_job(
+        tasks(16), agent=RUNTIME, group_size=4, temperature=0.7, pass_k=[1, 4]
+    )
+    assert again.name == job.name and again.status().state == "completed"
+
+
+def test_eval_job_on_base_model_and_checks(
+    agent_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    llm = LLM("gpt-oss-20b", session=agent_session)
+    fake = eval_llm(agent_session, monkeypatch, llm)
+    with pytest.raises(UnsupportedParameterError, match="pass@8 needs at least 8"):
+        llm.create_agent_eval_job(tasks(), agent=RUNTIME, pass_k=[1, 8], group_size=4)
+    other = f"arn:aws:bedrock-agentcore:us-east-1:{ACCOUNT}:runtime/someone_elses-AbC"
+    with pytest.raises(SkyhammerError):
+        llm.create_agent_eval_job(tasks(), agent=other)
+    assert not fake.created  # nothing started
+    llm.create_agent_eval_job(tasks(), agent=RUNTIME)
+    doc = json.loads(fake.created["JobConfigDocument"])
+    assert "ModelPackageConfig" not in doc
+    assert doc["EvaluationConfig"]["HyperParameters"] == {"batch": {"eval_group_size": 1}}

@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 from typing import Any
 
-from skyhammer import cost, pretrain, pricing, registry
+from botocore.exceptions import ClientError
+
+from skyhammer import agent_rl, cost, pretrain, pricing, registry
 from skyhammer import tags as tagging
+from skyhammer.agent_rl import AgentEvalJob
 from skyhammer.backends import DeploymentRef, DeploymentType, DeployOptions, get_backend
 from skyhammer.backends.sagemaker import resolve_model_dir
 from skyhammer.batch import BatchJob
 from skyhammer.catalog import (
     CATALOG,
     JOB_TECHNIQUES,
+    SAGEMAKER_HUB_MODEL_ARN,
     BackendKind,
     ModelEntry,
     ServingTarget,
@@ -315,6 +321,101 @@ class LLM:
             hyperparameters_extra=extra,
             **kwargs,
         )
+
+    def create_agent_eval_job(
+        self,
+        tasks: Dataset,
+        *,
+        agent: str,
+        group_size: int = 1,
+        temperature: float | None = None,
+        pass_k: list[int] | None = None,
+        success_threshold: float | None = None,
+        max_tokens: int | None = None,
+        name: str | None = None,
+        accept_eula: bool = False,
+    ) -> AgentEvalJob:
+        """Play held-out ``tasks`` through your agent with this model and score them: the
+        base model (``LLM("gpt-oss-20b")``) or a multi-turn RL output (``LLM.get(name)``).
+
+        ``group_size`` rollouts per task (pass@k needs at least k), sampled at
+        ``temperature`` (the service's default is 0). Reward, pass@k, turn and token
+        metrics go to the MLflow App (settings ``mlflow_arn``); raw results to
+        ``job.output_uri``. Billed per token like training; AWS allows one evaluation job
+        at a time by default. Same inputs → same job (reattaches)."""
+        entry = self._tunable()
+        package = None
+        if self.model_ref is not None:
+            if ":model-package/" not in self.model_ref.model_arn:
+                raise SkyhammerError(
+                    f"{self.model_ref.name} isn't a multi-turn RL output; evaluate it with "
+                    "create_eval_job, or evaluate its base model here"
+                )
+            package = self.model_ref.model_arn
+        settings = self.session.settings
+        route = resolve(
+            entry,
+            Technique.AGENTIC,
+            self.model_ref.region if self.model_ref else settings.region,
+            cross_region=settings.cross_region,
+            allowed_regions=settings.allowed_regions,
+        )
+        hp = agent_rl.eval_hyperparameters(
+            group_size=group_size,
+            temperature=temperature,
+            pass_k=pass_k,
+            success_threshold=success_threshold,
+            max_tokens=max_tokens,
+        )
+        mlflow_arn = agent_rl.mlflow_app(self.session)
+        agent_rl.agent_config(agent, route.region)  # check before uploading anything
+        res = self.session.resources_for(route.region)
+        if not res.agent_job_role_arn:
+            raise SkyhammerError(
+                "Multi-turn RL evaluation needs the bootstrap AgentJobRole; run "
+                f"`skyhammer bootstrap` again in {route.region} to add it"
+            )
+        if entry.requires_eula and not accept_eula:
+            raise SkyhammerError(
+                f"{entry.display_name} has a gated license. Review it, then pass accept_eula=True"
+            )
+        backend = get_backend(route.backend, self.session, route.region)
+        tasks.prepare(entry, Technique.AGENTIC, limits=agent_rl.LIMITS)
+        data_uri = tasks.upload(backend, Technique.AGENTIC)
+        key = json.dumps([package or entry.alias, agent, data_uri, hp], sort_keys=True)
+        base = re.sub(r"[^a-zA-Z0-9-]", "-", self.model_ref.name if self.model_ref else entry.alias)
+        name = name or f"{base[:40]}-eval-{hashlib.sha256(key.encode()).hexdigest()[:10]}"
+        output_uri = f"s3://{res.bucket}/evals/{name}/"
+        sm = self.session.client("sagemaker", region=route.region)
+        try:
+            job = sm.describe_job(JobName=name, JobCategory=agent_rl.EVAL_CATEGORY)
+            return AgentEvalJob(self.session, name, job["JobArn"], route.region, output_uri)
+        except ClientError as e:
+            if "not found" not in str(e).lower() and "does not exist" not in str(e).lower():
+                raise
+        kwargs = agent_rl.build_eval_job(
+            name,
+            agent=agent,
+            region=route.region,
+            role_arn=res.agent_job_role_arn,
+            base_model_arn=SAGEMAKER_HUB_MODEL_ARN.format(
+                region=route.region, model_id=route.capability.backend_model_id
+            ),
+            model_package_arn=package,
+            mlflow_arn=mlflow_arn,
+            data_uri=data_uri,
+            output_uri=output_uri,
+            hyperparameters=hp,
+            accept_eula=accept_eula,
+            kms_key_arn=res.kms_key_arn,
+            tags=tagging.as_aws(
+                tagging.build_tags(
+                    {"name": name, "kind": "eval", "base-model": entry.alias}, settings.tags
+                )
+            ),
+        )
+        resp = sm.create_job(**kwargs)
+        return AgentEvalJob(self.session, name, resp["JobArn"], route.region, output_uri)
 
     def plan(
         self,

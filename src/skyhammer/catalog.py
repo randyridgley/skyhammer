@@ -252,6 +252,9 @@ CATALOG: dict[str, ModelEntry] = {
             capabilities=[
                 _bedrock(Technique.SFT, "amazon.nova-2-lite-v1:0:256k"),
                 _bedrock(Technique.RFT, "amazon.nova-2-lite-v1:0:256k"),
+                # Multi-turn RL runs on SageMaker; its output is a restricted model package
+                # (evaluate it, not deploy it). Recipe in both regions' Hubs (2026-11-03).
+                _agentic("nova-textgeneration-lite-v2", _E1 | _W2),
             ],
             bedrock_serving_regions=_E1,
         ),

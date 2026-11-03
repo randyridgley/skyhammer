@@ -15,6 +15,10 @@ Two halves:
   objects; a ``prompt`` string is passed to the agent as is, other rows are passed as
   JSON. Needs a SageMaker MLflow App (settings ``mlflow_arn``), where the service logs
   rewards and trajectories, and the bootstrap ``AgentJobRole``.
+- **Evaluation**: ``llm.create_agent_eval_job(tasks, agent=...)`` plays held-out tasks
+  through the same agent, on a base model or a trained output (``LLM.get(name)``), and
+  reports reward and pass@k to MLflow. The trained output is a restricted model package
+  (AWS keeps the weights): you can evaluate it, but not download or serve it yet.
 - **The agent** (AgentCore or Lambda): wrap the entrypoint with ``rollout_handler``::
 
       from skyhammer.agent_rl import Rollout, rollout_handler
@@ -43,6 +47,7 @@ import functools
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -332,6 +337,140 @@ def parse_job(job: dict[str, Any]) -> JobInfo:
             info.progress,
         )
     return info
+
+
+# ---- evaluation ----
+
+EVAL_CATEGORY = "AgentRFTEvaluation"
+
+
+def eval_hyperparameters(
+    *,
+    group_size: int,
+    temperature: float | None,
+    pass_k: list[int] | None,
+    success_threshold: float | None,
+    max_tokens: int | None,
+) -> dict[str, Any]:
+    """The evaluation recipe's nested hyperparameters (SageMaker MTRL evaluation docs)."""
+    if group_size < 1:
+        raise UnsupportedParameterError("group_size must be at least 1")
+    if pass_k and max(pass_k) > group_size:
+        raise UnsupportedParameterError(
+            f"pass@{max(pass_k)} needs at least {max(pass_k)} rollouts per task; "
+            f"raise group_size (now {group_size})"
+        )
+    if pass_k and group_size > 1 and not temperature:
+        log.warning("pass@k at temperature 0 repeats the same answer; set temperature > 0")
+    hp: dict[str, Any] = {"batch": {"eval_group_size": group_size}}
+    metrics = {
+        k: v
+        for k, v in {"pass_k_values": pass_k, "success_threshold": success_threshold}.items()
+        if v is not None
+    }
+    if metrics:
+        hp["eval_metrics_config"] = metrics
+    sampling = {
+        k: v
+        for k, v in {"temperature": temperature, "sampling_max_tokens": max_tokens}.items()
+        if v is not None
+    }
+    if sampling:
+        hp["eval_sampling_params"] = sampling
+    return hp
+
+
+def build_eval_job(
+    name: str,
+    *,
+    agent: str,
+    region: str,
+    role_arn: str,
+    base_model_arn: str,
+    model_package_arn: str | None,
+    mlflow_arn: str,
+    data_uri: str,
+    output_uri: str,
+    hyperparameters: dict[str, Any],
+    accept_eula: bool,
+    kms_key_arn: str | None,
+    tags: list[dict[str, str]],
+) -> dict[str, Any]:
+    """CreateJob kwargs for an evaluation job (no AWS calls)."""
+    output: dict[str, Any] = {
+        "S3OutputPath": output_uri,
+        "MlflowConfig": {"MlflowResourceArn": mlflow_arn},
+    }
+    if kms_key_arn:
+        output["KmsKeyArn"] = kms_key_arn
+    document: dict[str, Any] = {
+        "AgentConfig": agent_config(agent, region),
+        "InputDataConfig": [
+            {
+                "ChannelName": "evaluation",
+                "DataSource": {"S3DataSource": {"S3DataType": "S3Prefix", "S3Uri": data_uri}},
+            }
+        ],
+        "OutputDataConfig": output,
+        "EvaluationConfig": {
+            "BaseModelArn": base_model_arn,
+            "AcceptEula": accept_eula,
+            "HyperParameters": hyperparameters,
+        },
+    }
+    if model_package_arn:
+        document["ModelPackageConfig"] = {"InputModelPackageArn": model_package_arn}
+    return {
+        "JobName": name,
+        "RoleArn": role_arn,
+        "JobCategory": EVAL_CATEGORY,
+        "JobConfigSchemaVersion": SCHEMA_VERSION,
+        "JobConfigDocument": json.dumps(document),
+        "Tags": tags,
+    }
+
+
+class AgentEvalJob:
+    """A multi-turn RL evaluation job. Create with ``LLM.create_agent_eval_job``; results
+    (reward, pass@k, turns, tokens) are in the MLflow App and under ``output_uri``."""
+
+    def __init__(self, session: Session, name: str, arn: str, region: str, output_uri: str):
+        self.session = session
+        self.name = name
+        self.arn = arn
+        self.region = region
+        self.output_uri = output_uri
+
+    def status(self) -> JobInfo:
+        sm = self.session.client("sagemaker", region=self.region)
+        return parse_job(sm.describe_job(JobName=self.name, JobCategory=EVAL_CATEGORY))
+
+    def wait(
+        self,
+        *,
+        poll_seconds: float = 60,
+        timeout_seconds: float | None = None,
+        on_status: Callable[[JobInfo], None] | None = None,
+    ) -> AgentEvalJob:
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
+        while True:
+            st = self.status()
+            if on_status:
+                on_status(st)
+            if st.state in ("completed", "failed", "stopped"):
+                if st.state != "completed":
+                    raise SkyhammerError(f"Evaluation {self.name} {st.state}: {st.message}")
+                return self
+            if deadline and time.monotonic() > deadline:
+                raise TimeoutError(f"Evaluation {self.name} still {st.state}")
+            time.sleep(poll_seconds)
+
+    def stop(self) -> None:
+        sm = self.session.client("sagemaker", region=self.region)
+        sm.stop_job(JobName=self.name, JobCategory=EVAL_CATEGORY)
+
+    def __repr__(self) -> str:
+        return f"AgentEvalJob(name={self.name!r}, region={self.region!r})"
 
 
 # ---- agent side ----

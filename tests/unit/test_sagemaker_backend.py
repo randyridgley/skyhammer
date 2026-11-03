@@ -372,7 +372,12 @@ def test_import_waits_for_a_free_slot(session: Session, monkeypatch: pytest.Monk
             raise quota
 
     monkeypatch.setattr(backend, "_start_import", start)
-    record = SimpleNamespace(serving="bedrock", job_name="j", handle=None)
+    record = SimpleNamespace(
+        serving="bedrock",
+        job_name="j",
+        job_id="arn:aws:sagemaker:us-east-1:1:training-job/j",
+        handle=None,
+    )
     first = backend.poll(record)  # type: ignore[arg-type]
     assert first.state is JobState.IMPORTING and "free Bedrock import slot" in (first.message or "")
     assert backend.poll(record).message == "importing into Bedrock"  # type: ignore[arg-type]

@@ -273,8 +273,11 @@ def test_langfuse_log_eval_scores_each_sample(langfuse: Any) -> None:
     assert len(ids) == 2 and len(set(ids)) == 2
     spans = _attrs(exporter)
     assert all(s["langfuse.observation.type"] == "evaluator" for s in spans)
-    assert json.loads(spans[1]["langfuse.observation.metadata.expected"]) == "Paris"
-    assert json.loads(spans[1]["langfuse.observation.metadata.run"]) == "v2 vs base"
+    # Spans can reach the exporter in either order; find the Paris sample's.
+    (paris,) = [
+        s for s in spans if json.loads(s["langfuse.observation.metadata.expected"]) == "Paris"
+    ]
+    assert json.loads(paris["langfuse.observation.metadata.run"]) == "v2 vs base"
     assert [(s["name"], s["value"], s["trace_id"]) for s in scores[2:]] == [
         ("exact", 0.0, ids[1]),
         ("judge", 0.25, ids[1]),

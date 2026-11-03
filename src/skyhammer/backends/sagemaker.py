@@ -567,9 +567,9 @@ class SageMakerServerlessBackend:
             training_uri=training_uri,
             validation_uri=validation_uri,
             output_uri=output_uri,
-            output_group_arn=self.ensure_model_package_group(request),
+            output_group_arn=self.ensure_model_package_group(request, restricted=True),
             checkpoint_group_arn=self.ensure_model_package_group(
-                request, name=f"{request.output_model}-checkpoints"
+                request, name=f"{request.output_model}-checkpoints", restricted=True
             ),
             kms_key_arn=res.kms_key_arn,
             tags=tagging.as_aws(request.tags),
@@ -578,9 +578,13 @@ class SageMakerServerlessBackend:
         return JobHandle(self.name, request.job_name, resp["JobArn"], self.region)
 
     def ensure_model_package_group(
-        self, request: TrainingRequest, *, name: str | None = None
+        self, request: TrainingRequest, *, name: str | None = None, restricted: bool = False
     ) -> str:
-        """One model package group per output model (free); retrains add versions."""
+        """One model package group per output model (free); retrains add versions.
+
+        ``restricted``: multi-turn RL registers its output as restricted model packages
+        (service-held weights you can evaluate but not download), which live only in
+        groups created with ``ManagedStorageType: Restricted``."""
         name = name or request.output_model
         try:
             resp = self.sagemaker.describe_model_package_group(ModelPackageGroupName=name)
@@ -591,7 +595,21 @@ class SageMakerServerlessBackend:
                 ModelPackageGroupName=name,
                 ModelPackageGroupDescription=f"skyhammer fine-tunes of {request.route.model.alias}",
                 Tags=tagging.as_aws(request.tags),
+                **(
+                    {"ManagedConfiguration": {"ManagedStorageType": "Restricted"}}
+                    if restricted
+                    else {}
+                ),
             )
+        else:
+            storage = (resp.get("ManagedConfiguration") or {}).get("ManagedStorageType")
+            if restricted != (storage == "Restricted"):
+                raise SkyhammerError(
+                    f"Model package group {name} already holds "
+                    f"{'multi-turn RL' if storage else 'other'} fine-tunes, and multi-turn RL "
+                    "output can't share a group with other techniques; choose another "
+                    "output_model"
+                )
         arn: str = resp["ModelPackageGroupArn"]
         return arn
 
@@ -601,11 +619,9 @@ class SageMakerServerlessBackend:
                 self.sagemaker.describe_job(JobName=handle.name, JobCategory=agent_rl.JOB_CATEGORY)
             )
             state = JobState(info.state)
-            artifacts = (
-                self._artifacts({"OutputModelPackageArn": info.output_package_arn})
-                if state is JobState.COMPLETED and info.output_package_arn
-                else None
-            )
+            # The output is a restricted model package: weights stay with the service, so
+            # the package ARN is the artifact (evaluate it; it can't be imported or served).
+            artifacts = info.output_package_arn if state is JobState.COMPLETED else None
             return JobStatus(
                 state=state,
                 message=info.message,
@@ -637,7 +653,11 @@ class SageMakerServerlessBackend:
     def poll(self, record: JobRecord) -> JobStatus:
         """Training status; once training completes (Bedrock serving), drive the import."""
         st = self.describe(record.handle)
-        if st.state is not JobState.COMPLETED or record.serving != ServingTarget.BEDROCK.value:
+        if (
+            st.state is not JobState.COMPLETED
+            or record.serving != ServingTarget.BEDROCK.value
+            or _is_agent_rl(record.job_id)  # restricted output: nothing to import
+        ):
             return st
         common = {"output_artifacts": st.output_artifacts, "log_url": st.log_url}
         imp = self._find_import(record.job_name)
@@ -777,6 +797,17 @@ class SageMakerServerlessBackend:
             raise RuntimeError(
                 f"Job {record.job_name!r} has not completed (state={st.state.value})"
             )
+        if _is_agent_rl(record.job_id):
+            return ModelRef(
+                name=record.output_model,
+                model_arn=st.output_artifacts,  # the restricted model package
+                backend=self.name,
+                base_alias=record.base_model,
+                region=self.region,
+                api="openai_chat",
+                serving=ServingTarget.SAGEMAKER.value,
+                artifacts_uri=None,
+            )
         bedrock = record.serving == ServingTarget.BEDROCK.value
         return ModelRef(
             name=record.output_model,
@@ -799,6 +830,12 @@ class SageMakerServerlessBackend:
             # resource is needed. The imported model ARN is the invocation target.
             return DeploymentRef(opts.name, model.model_arn, "Active")
         if not model.artifacts_uri:
+            if ":model-package/" in model.model_arn:
+                raise SkyhammerError(
+                    f"{model.name} is a multi-turn RL output (a restricted model package): "
+                    "AWS keeps its weights and doesn't serve them yet. Evaluate it with "
+                    "LLM.get(...).create_agent_eval_job(...)"
+                )
             raise SkyhammerError(f"{model.name} has no trained weights to serve")
         if opts.on:
             if opts.quantize or opts.speculative:
