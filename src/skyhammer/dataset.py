@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from skyhammer import media
 from skyhammer.catalog import DatasetLimits, ModelEntry, Technique
 from skyhammer.errors import DatasetValidationError, SkyhammerError
+from skyhammer.formats.converters import fold_system
 from skyhammer.validation import ValidationReport, apply_fixes, parse_jsonl, validate
 
 if TYPE_CHECKING:
@@ -43,6 +44,9 @@ class Dataset:
         # Set by ``mix``: the parts (name, sha256, rows taken, share), kept in job records.
         self.mixture: builtins.list[dict[str, Any]] | None = None
         self._media_digest: object = _UNSET
+        # Set by ``prepare`` when rows are rewritten for the model (not a data change, but a
+        # different upload, so it's part of the job fingerprint).
+        self.format_note: str | None = None
 
     # ---- constructors ----
 
@@ -352,11 +356,14 @@ class Dataset:
         report = self.validate(model, technique, is_validation_set=is_validation_set, limits=limits)
         if report.ok:
             self._prepared = [r for _, r in self._rows]
-            return
-        if auto_fix and report.fixable:
+        elif auto_fix and report.fixable:
             self._prepared = apply_fixes(self._rows, report)
-            return
-        raise DatasetValidationError(report)
+        else:
+            raise DatasetValidationError(report)
+        self.format_note = None
+        if (limits or model.limits).system_in_first_user:
+            self._prepared = [fold_system(r) for r in self._prepared]
+            self.format_note = "system-in-first-user"
 
     def split(self, validation_fraction: float, *, seed: int = 0) -> tuple[Dataset, Dataset]:
         if not 0 < validation_fraction < 1:

@@ -78,6 +78,9 @@ class DatasetLimits(BaseModel):
     reserved_terms: tuple[str, ...] = ()
     # Media the training service accepts, by kind ("image", "video"); empty = text only.
     media: dict[str, MediaLimit] = Field(default_factory=dict)
+    # Fold system messages into the first user turn before upload (chat templates that
+    # reject a turn rendered without a user message; see formats.converters.fold_system).
+    system_in_first_user: bool = False
     source: str = "generic defaults"
 
 
@@ -372,6 +375,7 @@ CATALOG: dict[str, ModelEntry] = {
             display_name="Qwen 3.6 27B",
             capabilities=_sm(_SM_OPEN, "huggingface-vlm-qwen3-6-27b"),
             bedrock_serving_regions=frozenset(),
+            limits=DatasetLimits(system_in_first_user=True),
         ),
         ModelEntry(
             alias="qwen3.6-35b-a3b",
@@ -383,6 +387,7 @@ CATALOG: dict[str, ModelEntry] = {
                 [Technique.SFT, Technique.RFT, Technique.CUSTOM], "huggingface-vlm-qwen3-6-35b-a3b"
             ),
             bedrock_serving_regions=frozenset(),
+            limits=DatasetLimits(system_in_first_user=True),
         ),
     ]
 }

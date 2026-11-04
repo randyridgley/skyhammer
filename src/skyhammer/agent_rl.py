@@ -148,24 +148,20 @@ def agent_config(agent: str, region: str) -> dict[str, Any]:
     return config
 
 
-def _typed(spec: ParamSpec, value: Any) -> Any:
+def _typed(spec: ParamSpec, value: Any) -> str:
+    """The value as the job document takes it: checked against the recipe, then a string.
+    The document schema allows only strings (CreateJob rejected integers, live 2026-11-04);
+    lists go as JSON."""
     if spec.type == "array":
         if not isinstance(value, list | tuple):
             raise UnsupportedParameterError(f"{spec.name} must be a list, got {value!r}")
-        return list(value)
-    checked = spec.check(value)
-    if spec.type == "integer":
-        return int(checked)
-    if spec.type == "float":
-        return float(checked)
-    if spec.type == "boolean":
-        return checked == "true"
-    return checked
+        return json.dumps(list(value))
+    return str(spec.check(value))
 
 
 def hyperparameters(
     request: TrainingRequest, recipe: Recipe, params: dict[str, ParamSpec]
-) -> dict[str, Any]:
+) -> dict[str, str]:
     """The values you set, checked against the recipe (the service fills in the rest).
     ``max_steps`` is required: it is what bounds a token-billed run."""
     set_fields = request.hyperparameters.set_fields()
@@ -584,7 +580,13 @@ class Rollout:
         )
         if not self.job_arn or not self.trajectory_id:
             raise SkyhammerError("Rollout payload has no job ARN / trajectory ID in metadata")
-        self.region: str = meta.get("region") or self.job_arn.split(":")[3]
+        parts = self.job_arn.split(":")
+        if not meta.get("region") and (len(parts) < 6 or parts[0] != "arn"):
+            raise SkyhammerError(
+                f"Rollout payload's job ARN {self.job_arn!r} isn't an ARN, so its region is "
+                "unknown (a test invocation needs a real training job's ARN)"
+            )
+        self.region: str = meta.get("region") or parts[3]
         instance = payload.get("instance")
         raw = payload.get("prompt", instance.get("prompt") if isinstance(instance, dict) else None)
         #: The task row's ``prompt`` string (a JSON object for rows with other fields).

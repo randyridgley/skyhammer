@@ -87,6 +87,8 @@ class TrainingRequest:
         }
         if self.source_model:  # only when set, so existing jobs keep their names
             payload["source"] = self.source_model
+        if getattr(self.dataset, "format_note", None):  # rows rewritten for the model
+            payload["format"] = self.dataset.format_note
         if self.code is not None:  # a code change is a new job
             payload["code"] = self.code.fingerprint()
         if self.agent is not None:

@@ -73,6 +73,27 @@ def to_bedrock_conversation(record: Record) -> Record:
     return out
 
 
+def fold_system(record: Record) -> Record:
+    """Move system messages into the first user turn, for chat templates that reject a
+    conversation prefix with no user message (Qwen 3.6 under verl, which renders each
+    turn on its own: "No user query found in messages", live 2026-11-04). Records without
+    ``messages`` or system messages are returned unchanged."""
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not any(m.get("role") == "system" for m in messages):
+        return record
+    system = "\n\n".join(message_text(m["content"]) for m in messages if m["role"] == "system")
+    rest = [dict(m) for m in messages if m["role"] != "system"]
+    for m in rest:
+        if m["role"] == "user":
+            content = m["content"]
+            if isinstance(content, list):
+                m["content"] = [{"type": "text", "text": system + "\n\n"}, *content]
+            else:
+                m["content"] = f"{system}\n\n{content}"
+            break
+    return {**record, "messages": rest}
+
+
 def to_sagemaker_sft(record: Record) -> Record:
     """OpenAI chat record -> SageMaker serverless SFT record.
 

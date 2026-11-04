@@ -129,12 +129,13 @@ def test_job_document(agent_session: Session, monkeypatch: pytest.MonkeyPatch) -
         "MlflowExperimentName": "wordle-gptoss",
         "MlflowRunName": request.job_name,
     }
-    # Only what you set, typed as the recipe declares (the service fills in the rest).
+    # Only what you set, checked against the recipe (the service fills in the rest), and
+    # as strings: the document schema rejects integers (live 2026-11-04).
     assert training["HyperParameters"] == {
-        "global_batch_size": 32,
-        "max_steps": 20,
-        "group_size": 8,
-        "sampling_max_tokens": 8192,
+        "global_batch_size": "32",
+        "max_steps": "20",
+        "group_size": "8",
+        "sampling_max_tokens": "8192",
     }
     assert {"Key": "skyhammer:technique", "Value": "agentic"} in kw["Tags"]
 
@@ -491,7 +492,11 @@ def test_nova_2_lite_job(agent_session: Session, monkeypatch: pytest.MonkeyPatch
     backend.submit(request)
     training = json.loads(fake.created["JobConfigDocument"])["TrainingConfig"]
     assert training["BaseModelArn"].endswith("/Model/nova-textgeneration-lite-v2")
-    assert training["HyperParameters"] == {"global_batch_size": 8, "max_steps": 5, "save_every": 0}
+    assert training["HyperParameters"] == {
+        "global_batch_size": "8",
+        "max_steps": "5",
+        "save_every": "0",
+    }
     with pytest.raises(UnsupportedParameterError, match="global_batch_size"):
         llm.plan(
             "agentic",
@@ -780,3 +785,8 @@ def test_train_rl_output_further(agent_session: Session) -> None:
         llm.plan("sft", tasks(), output_model="wordle-sft")
     with pytest.raises(SkyhammerError, match="resume_from continues a stopped run"):
         plan_rl(llm, resume_from=ckpt_arn(3))
+
+
+def test_rollout_needs_a_job_arn() -> None:
+    with pytest.raises(SkyhammerError, match="isn't an ARN"):
+        Rollout({"prompt": "x", "metadata": {"jobArn": "test", "rolloutId": "t-1"}})

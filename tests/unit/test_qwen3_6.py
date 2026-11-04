@@ -86,3 +86,58 @@ def test_capabilities() -> None:
     assert not moe.capabilities_for(Technique.DPO)
     with pytest.raises(UnsupportedRouteError):
         LLM("qwen3.6-35b-a3b").plan("dpo", Dataset.from_records([], "x"), output_model="m")
+
+
+def test_system_prompt_moves_into_the_first_user_turn(session: Session, tmp_path: Path) -> None:
+    # Qwen 3.6's chat template, rendered turn by turn by verl, rejects a system message
+    # on its own ("No user query found in messages", live 2026-11-04).
+    p = tmp_path / "sys.jsonl"
+    row = {
+        "messages": [
+            {"role": "system", "content": "Be brief."},
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello"},
+        ]
+    }
+    p.write_text("\n".join(json.dumps(row) for _ in range(40)))
+    ds = Dataset.from_file(p)
+    request, _ = LLM("qwen3.6-27b", session=session).plan(
+        "sft", ds, output_model="q", batch_size=16
+    )
+    backend = SageMakerServerlessBackend(session)
+    out = json.loads(ds._encode(backend, request.technique).splitlines()[0])
+    assert out["messages"] == [
+        {"role": "user", "content": "Be brief.\n\nHi"},
+        {"role": "assistant", "content": "Hello"},
+    ]
+    # A new upload, so a new job (not a reattach to one trained on the old rows).
+    assert (
+        request.fingerprint()
+        != request.__class__(**{**request.__dict__, "dataset": Dataset.from_file(p)}).fingerprint()
+    )
+    # Other models keep their system message.
+    ds2 = Dataset.from_file(p)
+    LLM("qwen3-0.6b", session=session).plan("sft", ds2, output_model="q2")
+    assert (
+        json.loads(ds2._encode(backend, request.technique).splitlines()[0])["messages"][0]["role"]
+        == "system"
+    )
+
+
+def test_fold_system_keeps_content_parts() -> None:
+    from skyhammer.formats.converters import fold_system
+
+    row = {
+        "messages": [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": [{"type": "text", "text": "U"}]},
+        ]
+    }
+    assert fold_system(row)["messages"] == [
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "S\n\n"}, {"type": "text", "text": "U"}],
+        }
+    ]
+    plain = {"messages": [{"role": "user", "content": "U"}]}
+    assert fold_system(plain) is plain
