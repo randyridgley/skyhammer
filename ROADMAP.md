@@ -31,7 +31,7 @@ What the 🟡 items wait on (details in each row):
 
 | Waiting on | Items |
 |---|---|
-| A live AWS run (code built) | TR-2 Qwen 3.6 (~$20), TR-9 Nova RFT ($80/h), TR-11 RLAIF rerun (~$39), SV-14 fp8 endpoint (~$2.40, 4-GPU capacity) and AWQ job, SE-5 VPC-only run, EV-9 MLflow App |
+| A live AWS run (code built) | TR-2 Qwen 3.6 serving (g6e.48xlarge capacity), TR-9 Nova RFT ($80/h), TR-11 RLAIF rerun (~$39), SV-14 fp8 endpoint (~$2.40; g6.12xlarge and g5.12xlarge both out of capacity in us-east-1 again 2026-11-04) and AWQ job, SE-5 VPC-only run, EV-9 MLflow App |
 | An account, key or quota | EV-10 Langfuse/W&B keys, SE-6 a second account, SV-10 provisioned-throughput quota (≥$60.50/h) |
 | AWS | OP-8 support case (cross-region training failure), TR-12/TR-15 account allowlist for multi-turn RL jobs |
 | Release setup | PK-5 CI role (OIDC), PK-7 PyPI publishing |
@@ -106,7 +106,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | ID | Capability | skyhammer | Milestone | Notes / exit criteria |
 |---|---|---|---|---|
 | TR-1 | SFT LoRA (Nova, Bedrock-native) | ✅ | M1 | Live: Nova Micro, 41 min, deployed + chat |
-| TR-2 | SFT LoRA (open-weight, SageMaker serverless) | ✅ | M1 | Live: Qwen3-0.6B, 13 min train + 13 min import. Qwen 3.6 27B and 35B-A3B added 2026-11-04 (text SFT/RLVR/RLAIF, 27B also DPO; AWS verl recipes, SageMaker-served; base hosting read from the Hub's ranked inference configs, which newer entries use instead of top-level fields); unit-tested from the real Hub entry and recipe, live run pending (example 47, ~$20 mostly serving) |
+| TR-2 | SFT LoRA (open-weight, SageMaker serverless) | ✅ | M1 | Live: Qwen3-0.6B, 13 min train + 13 min import. Qwen 3.6 27B and 35B-A3B added 2026-11-04 (text SFT/RLVR/RLAIF, 27B also DPO; AWS verl recipes, SageMaker-served; base hosting read from the Hub's ranked inference configs, which newer entries use instead of top-level fields); live 2026-11-04: the first run failed in verl's data loader, because Qwen 3.6's chat template rejects a system message rendered without a user turn; system prompts are now folded into the first user turn for these models, and the rerun trained in 22 min (LoRA SFT, 50 rows; output has both `checkpoints/hf/` adapter and `checkpoints/hf_merged/` weights, 55 GB). Serving not yet verified: the ml.g6e.48xlarge endpoint failed on InsufficientInstanceCapacity and was removed automatically. The recipe also lists ml.p5.48xlarge, which Skyhammer doesn't yet offer as a fallback |
 | TR-3 | Full fine-tuning | ✅ | M3 | `training_type="full"`, defaulting to learning_rate=1e-5 (recipes ship 1e-4). Live 2026-10-30: the earlier degenerate output was 50 identical answers at 1e-4 (memorized text, never stopped); on varied data both rates learned to stop, 1e-4 invented details and 1e-5 generalized. Qwen3-0.6B full FT at 1e-5 → import (fp32 export, 18 min) → correct, clean answers → delete |
 | TR-4 | Hyperparameters validated vs AWS recipe specs | ✅ | M1 | Types/enums/bounds from Hub override params |
 | TR-5 | Auto-routing (backend, region, serving) | ✅ | M0 | Home region first, cross-region opt-out |
