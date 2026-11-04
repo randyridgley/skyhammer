@@ -56,6 +56,7 @@ Every user-facing feature in [ROADMAP.md](../ROADMAP.md) has an example here; th
 | [44_quantized_endpoint.py](44_quantized_endpoint.py) | Faster, smaller SageMaker endpoints: `deploy(quantize="fp8", speculative={"method": "ngram", ...})` (LMI vLLM options; Bedrock serving refuses them) | SV-14 |
 | [45_awq_quantization.py](45_awq_quantization.py) | Managed AWQ quantization (`create_optimization_job`): a SageMaker inference optimization job writes 4-bit weights, registered as a new model and served on a smaller GPU | SV-14 |
 | [46_resume_agent_rl.py](46_resume_agent_rl.py) | Multi-turn RL checkpoints: list a run's resumable checkpoints, resume a failed or stopped run from one (`resume_from=`, settings checked against the first run), or train a finished output further | TR-12, TR-15 |
+| [47_qwen3_6_sft.py](47_qwen3_6_sft.py) | Fine-tune Qwen 3.6 27B (SageMaker verl recipe, text) and chat with it on a SageMaker endpoint | TR-2, SV-4 |
 | [28_rl_with_rewards.py](28_rl_with_rewards.py) | RL with a Python reward function or an LLM judge (auto-deployed Lambda), runtime-capped | TR-10, TR-11, TR-13, EV-4 |
 | [30_rft_on_bedrock.py](30_rft_on_bedrock.py) | RFT on Bedrock: Nova 2 Lite, and Qwen3-32B / GPT-OSS-20B through bedrock-mantle in us-west-2 from any region | TR-9, OP-8 |
 | [24_distill_open_weight.py](24_distill_open_weight.py) | Any Bedrock teacher → open-weight student (teacher answers, then SFT) | TR-7 |

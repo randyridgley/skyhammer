@@ -211,6 +211,20 @@ def _hosting_variants(doc: dict[str, Any], env: dict[str, str]) -> dict[str, Hos
     return out
 
 
+def _hosting_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    """The document's base hosting fields. Newer entries (Qwen 3.6, live 2026-11-04) keep
+    the image and per-instance profiles only in ranked ``InferenceConfigComponents``; use
+    AWS's top-ranked one over the top-level fields."""
+    if doc.get("HostingEcrUri"):
+        return doc
+    components = doc.get("InferenceConfigComponents") or {}
+    ranking = ((doc.get("InferenceConfigRankings") or {}).get("overall") or {}).get("Rankings")
+    for name in ranking or list(components):
+        if (components.get(name) or {}).get("HostingEcrUri"):
+            return {**doc, **components[name]}
+    return doc
+
+
 def parse_hub_model(resp: dict[str, Any]) -> HubModel:
     doc = json.loads(resp["HubContentDocument"])
     recipes = []
@@ -240,25 +254,26 @@ def parse_hub_model(resp: dict[str, Any]) -> HubModel:
             )
         )
     base = None
-    if doc.get("HostingArtifactUri") and doc.get("HostingEcrUri"):
-        itype = doc.get("DefaultInferenceInstanceType", "ml.g6e.2xlarge")
+    h = _hosting_doc(doc)
+    if h.get("HostingArtifactUri") and h.get("HostingEcrUri"):
+        itype = h.get("DefaultInferenceInstanceType", "ml.g6e.2xlarge")
         env = {
             v["Name"]: str(v["Default"])
-            for v in doc.get("InferenceEnvironmentVariables", [])
+            for v in h.get("InferenceEnvironmentVariables", [])
             if v.get("Scope", "container") == "container" and "Default" in v
         }
-        variants = _hosting_variants(doc, env)
+        variants = _hosting_variants(h, env)
         base = BaseHosting(
-            artifact_uri=doc["HostingArtifactUri"],
+            artifact_uri=h["HostingArtifactUri"],
             hosting=variants.get(itype)
             or HostingConfig(
-                image_uri=doc["HostingEcrUri"],
+                image_uri=h["HostingEcrUri"],
                 instance_type=itype,
                 gpus=instance_gpus(itype),
                 memory_mb=8192,
                 environment=env,
             ),
-            network_isolation=bool(doc.get("InferenceEnableNetworkIsolation", False)),
+            network_isolation=bool(h.get("InferenceEnableNetworkIsolation", False)),
             variants=variants,
         )
     return HubModel(

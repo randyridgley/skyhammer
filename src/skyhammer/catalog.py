@@ -360,6 +360,30 @@ CATALOG: dict[str, ModelEntry] = {
             ],
             bedrock_serving_regions=frozenset(),
         ),
+        # Text fine-tuning of Qwen 3.6 (vision models; image rows wait on the format, see
+        # TR-20). Hub recipes (2026-11-04): 27B SFT/DPO/RLVR/RLAIF, 35B-A3B (MoE) SFT and
+        # RLVR/RLAIF, LoRA and full. Bedrock can't import the architecture; served from
+        # SageMaker (AWS's vLLM container, 4-8 GPUs).
+        ModelEntry(
+            alias="qwen3.6-27b",
+            hf_repo="Qwen/Qwen3.6-27B",
+            params_b=27,
+            family="qwen",
+            display_name="Qwen 3.6 27B",
+            capabilities=_sm(_SM_OPEN, "huggingface-vlm-qwen3-6-27b"),
+            bedrock_serving_regions=frozenset(),
+        ),
+        ModelEntry(
+            alias="qwen3.6-35b-a3b",
+            hf_repo="Qwen/Qwen3.6-35B-A3B",
+            params_b=35,
+            family="qwen",
+            display_name="Qwen 3.6 35B-A3B",
+            capabilities=_sm(
+                [Technique.SFT, Technique.RFT, Technique.CUSTOM], "huggingface-vlm-qwen3-6-35b-a3b"
+            ),
+            bedrock_serving_regions=frozenset(),
+        ),
     ]
 }
 
