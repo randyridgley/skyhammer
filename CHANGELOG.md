@@ -11,6 +11,11 @@ breaking changes wait for a major release. The public API is everything importab
 
 ## [Unreleased]
 
+### Fixed
+- Model and environment records are updated with S3 conditional writes, so two
+  processes changing the same model or environment at once no longer lose each other's
+  changes (previously the last writer won).
+
 ## [0.1.0] - 2026-10-30
 
 First public release. Every feature marked done in [ROADMAP.md](ROADMAP.md) was verified

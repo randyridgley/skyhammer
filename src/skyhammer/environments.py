@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from skyhammer import registry
 from skyhammer import tags as tagging
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from skyhammer.session import Session
 
 _ENVS = "envs"
+T = TypeVar("T")
 _APP = re.compile(r"^[a-zA-Z0-9](-*[a-zA-Z0-9])*$")
 _ENV = re.compile(r"^[a-z0-9](-*[a-z0-9])*$")
 MAX_HISTORY = 20
@@ -98,11 +99,21 @@ class Environment:
         data = tagging.read_manifest(self.session.client("s3"), res.bucket, _ENVS, self.app)
         return data or {"name": self.app, "envs": {}}
 
-    def _save(self, manifest: dict[str, Any]) -> None:
+    def _update(self, change: Callable[[dict[str, Any]], T]) -> T:
+        """Apply ``change`` to the manifest and save it with a conditional write, rereading
+        and reapplying if another process changed it first. Returns ``change``'s result."""
         res = self.session.resources
-        tagging.write_manifest(
-            self.session.client("s3"), res.bucket, _ENVS, self.app, manifest, res.kms_key_arn
+        out: list[T] = []
+
+        def apply(data: dict[str, Any] | None) -> dict[str, Any]:
+            manifest = data or {"name": self.app, "envs": {}}
+            out[:] = [change(manifest)]
+            return manifest
+
+        tagging.update_manifest(
+            self.session.client("s3"), res.bucket, _ENVS, self.app, apply, res.kms_key_arn
         )
+        return out[0]
 
     def _state(self) -> dict[str, Any] | None:
         state: dict[str, Any] | None = self._manifest()["envs"].get(self.env)
@@ -144,19 +155,21 @@ class Environment:
         normalize_weights(targets)  # validates
         for name in targets:
             self._check_model(name)
-        manifest = self._manifest()
-        state = manifest["envs"].get(self.env)
-        history = list(state.get("history", [])) if state else []
-        if state:
-            history.append(
-                {k: state[k] for k in ("targets", "at", "note") if state.get(k) is not None}
-            )
-        new = {"targets": dict(targets), "at": time.time(), "history": history[-MAX_HISTORY:]}
-        if note:
-            new["note"] = note
-        manifest["envs"][self.env] = new
-        self._save(manifest)
-        return dict(targets)
+
+        def change(manifest: dict[str, Any]) -> dict[str, float]:
+            state = manifest["envs"].get(self.env)
+            history = list(state.get("history", [])) if state else []
+            if state:
+                history.append(
+                    {k: state[k] for k in ("targets", "at", "note") if state.get(k) is not None}
+                )
+            new = {"targets": dict(targets), "at": time.time(), "history": history[-MAX_HISTORY:]}
+            if note:
+                new["note"] = note
+            manifest["envs"][self.env] = new
+            return dict(targets)
+
+        return self._update(change)
 
     def promote(self, model: str, *, note: str | None = None) -> dict[str, float]:
         """Send all of this environment's traffic to ``model``."""
@@ -168,21 +181,25 @@ class Environment:
 
     def rollback(self) -> dict[str, float]:
         """Restore the previous targets (the change being undone is dropped from history)."""
-        manifest = self._manifest()
-        state = manifest["envs"].get(self.env)
-        if not state or not state.get("history"):
-            raise SkyhammerError(f"{self.ref} has no earlier version to roll back to")
-        previous = state["history"][-1]
-        manifest["envs"][self.env] = {**previous, "history": state["history"][:-1]}
-        self._save(manifest)
-        return dict(previous["targets"])
+
+        def change(manifest: dict[str, Any]) -> dict[str, float]:
+            state = manifest["envs"].get(self.env)
+            if not state or not state.get("history"):
+                raise SkyhammerError(f"{self.ref} has no earlier version to roll back to")
+            previous = state["history"][-1]
+            manifest["envs"][self.env] = {**previous, "history": state["history"][:-1]}
+            return dict(previous["targets"])
+
+        return self._update(change)
 
     def delete(self) -> None:
         """Remove this environment (the models it points at are untouched)."""
-        manifest = self._manifest()
-        if manifest["envs"].pop(self.env, None) is None:
-            raise SkyhammerError(f"{self.ref} doesn't exist")
-        self._save(manifest)
+
+        def change(manifest: dict[str, Any]) -> None:
+            if manifest["envs"].pop(self.env, None) is None:
+                raise SkyhammerError(f"{self.ref} doesn't exist")
+
+        self._update(change)
 
     # ---- calling ----
 

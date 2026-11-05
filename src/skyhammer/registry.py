@@ -7,7 +7,8 @@
 
 Model manifests map the user's name ("support-qwen-v1") to its latest job, so jobs can be
 reattached by name from any process, and remember deployments so ``LLM.get(name)`` can
-chat without redeploying. Last writer wins; there is no locking.
+chat without redeploying. Model and environment manifests are updated with S3 conditional
+writes, so processes changing the same model at once don't lose each other's changes.
 """
 
 from __future__ import annotations
@@ -31,35 +32,39 @@ def _s3(session: Session) -> Any:
     return session.client("s3")
 
 
+def _update(session: Session, kind: str, name: str, change: Any) -> dict[str, Any] | None:
+    res = session.resources
+    return tagging.update_manifest(_s3(session), res.bucket, kind, name, change, res.kms_key_arn)
+
+
 def save_job(session: Session, record: JobRecord) -> None:
     res = session.resources
-    s3 = _s3(session)
     tagging.write_manifest(
-        s3, res.bucket, _JOBS, record.job_name, record.to_json(), res.kms_key_arn
+        _s3(session), res.bucket, _JOBS, record.job_name, record.to_json(), res.kms_key_arn
     )
-    model = tagging.read_manifest(s3, res.bucket, _MODELS, record.output_model) or {
-        "name": record.output_model,
-        "base_model": record.base_model,
-        "jobs": [],
-    }
-    if record.job_name not in model["jobs"]:
-        model["jobs"].append(record.job_name)
-    model.update(latest_job=record.job_name, deleted=False, updated_at=time.time())
-    tagging.write_manifest(s3, res.bucket, _MODELS, record.output_model, model, res.kms_key_arn)
+
+    def change(model: dict[str, Any] | None) -> dict[str, Any]:
+        model = model or {"name": record.output_model, "base_model": record.base_model, "jobs": []}
+        if record.job_name not in model["jobs"]:
+            model["jobs"].append(record.job_name)
+        model.update(latest_job=record.job_name, deleted=False, updated_at=time.time())
+        return model
+
+    _update(session, _MODELS, record.output_model, change)
 
 
 def save_model_ref(session: Session, ref: ModelRef, **extra: Any) -> None:
     """Record a model that has no training job in this account (promoted from another
     account), so ``LLM.get(name)`` finds it."""
-    res = session.resources
-    s3 = _s3(session)
-    model = tagging.read_manifest(s3, res.bucket, _MODELS, ref.name) or {
-        "name": ref.name,
-        "base_model": ref.base_alias,
-        "jobs": [],
-    }
-    model.update(model_ref=dataclasses.asdict(ref), deleted=False, updated_at=time.time(), **extra)
-    tagging.write_manifest(s3, res.bucket, _MODELS, ref.name, model, res.kms_key_arn)
+
+    def change(model: dict[str, Any] | None) -> dict[str, Any]:
+        model = model or {"name": ref.name, "base_model": ref.base_alias, "jobs": []}
+        model.update(
+            model_ref=dataclasses.asdict(ref), deleted=False, updated_at=time.time(), **extra
+        )
+        return model
+
+    _update(session, _MODELS, ref.name, change)
 
 
 def load_job(session: Session, job_name: str) -> JobRecord | None:
@@ -72,13 +77,13 @@ def load_model(session: Session, name: str) -> dict[str, Any] | None:
 
 
 def update_model(session: Session, name: str, **changes: Any) -> None:
-    res = session.resources
-    s3 = _s3(session)
-    model = tagging.read_manifest(s3, res.bucket, _MODELS, name)
-    if model is None:
-        raise SkyhammerError(f"No skyhammer model named {name!r}")
-    model.update(changes, updated_at=time.time())
-    tagging.write_manifest(s3, res.bucket, _MODELS, name, model, res.kms_key_arn)
+    def change(model: dict[str, Any] | None) -> dict[str, Any]:
+        if model is None:
+            raise SkyhammerError(f"No skyhammer model named {name!r}")
+        model.update(changes, updated_at=time.time())
+        return model
+
+    _update(session, _MODELS, name, change)
 
 
 def find_job(session: Session, name: str) -> JobRecord:
