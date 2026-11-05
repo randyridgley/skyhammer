@@ -12,26 +12,26 @@ run where marked 🔴, **and it has a Python example in `examples/`**. Update th
 
 Legend: ✅ done · 🟡 partial (see notes) · ⬜ planned · ➖ out of scope (with reason)
 
-### Status at a glance (2026-11-04)
+### Status at a glance (2026-11-05)
 
 | Area | ✅ | 🟡 | ➖ |
 |---|---|---|---|
 | 2.1 Developer experience | 14 | 0 | 0 |
 | 2.2 Data | 11 | 1 | 0 |
 | 2.3 Training | 16 | 4 | 0 |
-| 2.4 Evaluation | 8 | 2 | 0 |
+| 2.4 Evaluation | 9 | 1 | 0 |
 | 2.5 Serverless inference | 23 | 0 | 1 |
 | 2.6 Serving and inference | 15 | 2 | 1 |
 | 2.7 Operations, cost and observability | 6 | 1 | 0 |
 | 2.8 Security and enterprise | 5 | 2 | 1 |
 | 2.9 Packaging and quality | 6 | 2 | 0 |
-| **Total** | **104** | **14** | **3** |
+| **Total** | **105** | **13** | **3** |
 
 What the 🟡 items wait on (details in each row):
 
 | Waiting on | Items |
 |---|---|
-| A live AWS run (code built) | TR-2 Qwen 3.6 serving (g6e.48xlarge capacity), TR-9 Nova RFT ($80/h), TR-11 RLAIF rerun (~$39), SV-14 fp8 endpoint (~$2.40; g6.12xlarge and g5.12xlarge both out of capacity in us-east-1 again 2026-11-04) and AWQ job, SE-5 VPC-only run, EV-9 MLflow App |
+| A live AWS run (code built) | TR-2 Qwen 3.6 serving (g6e.48xlarge capacity), TR-9 Nova RFT ($80/h), TR-11 RLAIF rerun (~$39), SV-14 fp8 endpoint (~$2.40; g6.12xlarge and g5.12xlarge both out of capacity in us-east-1 again 2026-11-04) and AWQ job, SE-5 VPC-only run (us-east-1 is at its 20-VPC quota; needs an increase or a free slot) |
 | An account, key or quota | EV-10 Langfuse/W&B keys, SE-6 a second account, SV-10 provisioned-throughput quota (≥$60.50/h) |
 | AWS | OP-8 support case (cross-region training failure), TR-12/TR-15 account allowlist for multi-turn RL jobs |
 | Release setup | PK-5 CI role (OIDC), PK-7 PyPI publishing |
@@ -138,7 +138,7 @@ evaluation jobs, RFT with graders, and traffic splitting / environments.
 | EV-6 | Managed eval jobs (scale, reports) | ✅ | M3 | Bedrock Model Evaluation, LLM as a judge: 11 built-in metrics, ≤1,000 prompts, per-category scores and judge explanations; SageMaker-served models judged from precomputed answers; `skyhammer eval judge`. Verified live 2026-10-29 (10 min, real output recorded as a fixture). Bootstrap key policy now allows evaluation jobs |
 | EV-7 | Base vs fine-tuned comparison report | ✅ | M3 | `skyhammer eval compare MODEL... --dataset --grader` (base vs tuned or any models, with cost); live 2026-10-29 on 3 providers |
 | EV-8 | Eval in specs (`skyhammer apply`) | ✅ | M1.5 | |
-| EV-9 | MLflow tracking | 🟡 | M3 | SageMaker `MlflowConfig` ✅ (native). `skyhammer.integrations.mlflow`: `log_job` mirrors Bedrock (and any) job params and per-step metrics into the same layout (experiment = model, run = job; resumable, `follow=True` live; skips SageMaker jobs already logging natively), `log_eval` logs mean scores + a sample table. Tested against a real local MLflow store. 🔴 live run pending against the SageMaker MLflow App |
+| EV-9 | MLflow tracking | ✅ | M3 | SageMaker `MlflowConfig` ✅ (native). `skyhammer.integrations.mlflow`: `log_job` mirrors Bedrock (and any) job params and per-step metrics into the same layout (experiment = model, run = job; resumable, `follow=True` live; skips SageMaker jobs already logging natively), `log_eval` logs mean scores + a sample table. Tested against a real local MLflow store. Live 2026-11-05 against a SageMaker MLflow App: a Qwen3 0.6B SFT job logged natively (loss, grad norm, LR, validation loss per step), `log_eval` and `log_job` (a Bedrock Nova job) landed beside it. The run found three bugs, fixed: the training role needs `sagemaker:CallMlflowAppApi` and `DescribeMlflowApp` for MLflow Apps (CreateTrainingJob: "Access denied to MLflow App"), `log_eval` ignored settings `mlflow_arn`, and the `sagemaker-mlflow` plugin signs for MLflow's global tracking URI, so Skyhammer sets it for ARNs |
 | EV-10 | W&B / Langfuse integrations | 🟡 | M5 | `skyhammer.integrations.langfuse`: `traced(model)` records every `chat.completions.create` (streams included) as a Langfuse generation with tokens, Skyhammer's cost and errors; `log_eval` sends one trace per sample with a score per grader. `skyhammer.integrations.wandb`: `log_job` (config + per-step metrics, `follow=True` streams live) and `log_eval` (mean scores + sample table). Tested against the real SDKs offline (W&B offline mode, Langfuse in-memory OTel exporter). 🔴 live run pending (needs Langfuse keys and a W&B account) |
 
 ### 2.5 Serverless inference (no fine-tuning required)
@@ -289,7 +289,7 @@ schemas, and text tool-call recovery. SI-13 batch verified live (100/100).
 Verified live 2026-10-29: SV-4/5/6/13 SageMaker endpoints (deploy 8 min, scale to zero after
 23 min idle, 11 min cold start, move to Bedrock), TR-6 Nova distillation, TR-7 open-weight
 distillation, EV-6 managed eval jobs, EV-7, DA-6 tokenizer counts, DA-7, DA-8 lineage,
-PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. Remaining: EV-9 MLflow mirroring, OP-8 live cross-region (bedrock-mantle backend built;
+PK-6 drift checks, SI-21, SI-23, SV-7, PK-8. EV-9 MLflow verified live 2026-11-05. Remaining: OP-8 live cross-region (bedrock-mantle backend built;
 AWS-side training failure under investigation). Verified live 2026-10-30: DA-3, SI-19, SI-20, SI-22, SV-17, SV-18, TR-3, TR-18.
 
 ### M4: preference and RL training, production serving (in progress)
