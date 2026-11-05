@@ -309,9 +309,11 @@ Resources:
               - Effect: Allow
                 Action: sagemaker:DescribeHubContent
                 Resource: "*"
-              # Log training metrics to MLflow when skyhammer's mlflow_arn is set.
+              # Log training metrics to MLflow when skyhammer's mlflow_arn is set. MLflow
+              # Apps also need CallMlflowAppApi and DescribeMlflowApp: without them
+              # CreateTrainingJob fails with "Access denied to MLflow App" (live 2026-11-05).
               - Effect: Allow
-                Action: "sagemaker-mlflow:*"
+                Action: ["sagemaker-mlflow:*", sagemaker:CallMlflowAppApi, sagemaker:DescribeMlflowApp]
                 Resource:
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-app/*"
                   - !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:mlflow-tracking-server/*"

@@ -40,8 +40,18 @@ _MAX_PARAM = 6000  # MLflow's param value limit
 
 
 def client(tracking_uri: str | None = None, session: Session | None = None) -> MlflowClient:
-    if tracking_uri is None and session is not None:
-        tracking_uri = session.settings.mlflow_arn
+    """The tracking server: ``tracking_uri``, else settings ``mlflow_arn`` (the session's,
+    or the current settings when no session is passed), else MLflow's own default."""
+    if tracking_uri is None:
+        from skyhammer.config import get_settings
+
+        tracking_uri = (session.settings if session is not None else get_settings()).mlflow_arn
+    if tracking_uri and tracking_uri.startswith("arn:"):
+        # The sagemaker-mlflow plugin signs requests for MLflow's global tracking URI, not
+        # the client's, so a client for an ARN fails unless the global URI matches.
+        import mlflow
+
+        mlflow.set_tracking_uri(tracking_uri)
     return MlflowClient(tracking_uri=tracking_uri)
 
 

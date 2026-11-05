@@ -355,3 +355,25 @@ def test_mlflow_log_eval(mlruns: str) -> None:
     # Into an existing run (e.g. the training job's), under another key.
     sh_mlflow.log_eval(REPORT, run_id=run_id, tracking_uri=mlruns, key="judge")
     assert client.get_run(run_id).data.metrics["judge/correctness"] == 0.75
+
+
+def test_mlflow_uses_settings_mlflow_arn_without_a_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    from skyhammer import config
+
+    (tmp_path / "skyhammer.yaml").write_text(
+        "mlflow_arn: arn:aws:sagemaker:us-east-1:1:mlflow-app/app-x\n"
+    )
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        sh_mlflow, "MlflowClient", lambda tracking_uri=None: seen.append(tracking_uri)
+    )
+    import mlflow
+
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: seen.append(f"global {uri}"))
+    sh_mlflow.client()
+    sh_mlflow.client("file:///elsewhere")  # not an ARN: the global URI is left alone
+    arn = "arn:aws:sagemaker:us-east-1:1:mlflow-app/app-x"
+    assert seen == [f"global {arn}", arn, "file:///elsewhere"]
+    assert config.get_settings().mlflow_arn  # read from ./skyhammer.yaml
